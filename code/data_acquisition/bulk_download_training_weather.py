@@ -44,6 +44,7 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -71,6 +72,17 @@ MAX_RETRIES = 5
 MINUTE_RETRY_SLEEP_SECONDS = 65
 HOUR_RETRY_SLEEP_SECONDS = 62 * 60  # a 65s sleep against an hourly cap just spins uselessly
 MAX_HOUR_RETRIES = 10  # generous ceiling (~10h) so an unattended overnight run survives
+
+# Discovered 19 Aug night: the DAILY quota (~110-130 total calls/day, see module
+# docstring) is shared with the ~367 separate calls the real submission generation
+# needs later (code/predict.py — one call per distinct issue_time->run mapping across
+# both tasks, verified by actually building that schedule, not estimated). Generation
+# is close to a hard floor: the guidelines fix a *minimum* issuance frequency, so it
+# can't be thinned the way training can. Training gets a firm, conservative budget for
+# ADDITIONAL runs (on top of whatever's already downloaded) so there's quota left for
+# generation instead of the two competing for the same days. See PLAN.md section 2.5's
+# 19 Aug addendum for the reasoning and PLAN.md section 2.1 for the generation math.
+ADDITIONAL_RUN_BUDGET = 80
 
 
 def load_training_locations() -> pd.DataFrame:
@@ -128,11 +140,29 @@ def main():
     locations = load_training_locations()
     print(f"Training locations: {len(locations)}")
 
-    run_times = [
+    full_schedule = [
         pd.Timestamp(d) + pd.Timedelta(hours=h)
         for d in pd.date_range(TRAIN_START, TRAIN_END, freq="D")[::DAY_STRIDE]
         for h in RUN_HOURS
     ]
+    already_done = [rt for rt in full_schedule if run_output_path(rt).exists()]
+    still_needed = [rt for rt in full_schedule if not run_output_path(rt).exists()]
+
+    if len(still_needed) <= ADDITIONAL_RUN_BUDGET:
+        run_times = full_schedule
+    else:
+        # Evenly-spaced subsample of what's left, not the next ADDITIONAL_RUN_BUDGET
+        # in chronological order — the 40 runs already on disk cluster in Jan-Mar
+        # (see PLAN.md), so taking the next chunk sequentially would spend the whole
+        # budget extending that same cluster and never reach the summer/early
+        # hurricane-season months the Jan-Aug window was originally chosen to cover.
+        idx = np.linspace(0, len(still_needed) - 1, ADDITIONAL_RUN_BUDGET, dtype=int)
+        sampled = sorted({still_needed[i] for i in idx})
+        run_times = already_done + sampled
+        print(f"Budget cap: {len(still_needed)} runs still needed for the full schedule, "
+              f"capped to {len(sampled)} more (evenly spread across the remaining span) "
+              f"-> {len(run_times)} total this pass.")
+
     print(f"Runs to fetch: {len(run_times)} ({run_times[0]} .. {run_times[-1]})")
 
     batches = [locations.iloc[i : i + BATCH_SIZE] for i in range(0, len(locations), BATCH_SIZE)]
