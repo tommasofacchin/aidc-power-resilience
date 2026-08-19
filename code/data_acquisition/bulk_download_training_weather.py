@@ -18,10 +18,11 @@ size/time per call.
 
 Rate limiting: the Single Runs API enforces THREE separate undocumented caps, found
 one at a time as each was hit in turn — per-minute, per-hour, and per-day (see
-open_meteo.RateLimitError for the details and how each is classified). The first two
-are worth retrying through (65s and ~62min backoff respectively); the daily one isn't
-— see the try/except around the main loop below, which stops the script cleanly
-instead of retrying into a crash the way it did the first time this was hit.
+open_meteo.RateLimitError for the details and how each is classified). All three are
+retried through: minute/hour inside fetch_with_retry (65s / ~62min backoff), and day
+in main()'s outer loop, which polls every few hours until the quota resets rather than
+crashing the way it did the first time this was hit. That makes this script safe to
+start once and leave running unattended across multiple calendar days.
 
 Resumable by construction: every (locations-batch, run_time) call is cached forever by
 open_meteo.fetch_single_run's requests-cache layer, and this script also skips a run
@@ -84,6 +85,16 @@ MAX_HOUR_RETRIES = 10  # generous ceiling (~10h) so an unattended overnight run 
 # 19 Aug addendum for the reasoning and PLAN.md section 2.1 for the generation math.
 ADDITIONAL_RUN_BUDGET = 80
 
+# Unknown exact reset time (Open-Meteo doesn't document it — best guess is UTC
+# midnight, unconfirmed), so this polls periodically rather than sleeping for a single
+# guessed duration: cheap (one wasted call every DAY_RETRY_SLEEP_SECONDS) and correct
+# regardless of when the reset actually happens. MAX_DAY_RETRIES is a safety ceiling,
+# not an expectation — at 4h spacing that's 3 days, comfortably more than one calendar
+# rollover, so the process can be started once and left running unattended for days
+# rather than needing someone to notice the daily wall and relaunch it by hand.
+DAY_RETRY_SLEEP_SECONDS = 4 * 60 * 60
+MAX_DAY_RETRIES = 18
+
 
 def load_training_locations() -> pd.DataFrame:
     counties = pd.read_csv(PROCESSED_DIR / "training_counties.csv", dtype={"fips_code": str})
@@ -105,14 +116,9 @@ def fetch_with_retry(locations: pd.DataFrame, run_time: pd.Timestamp) -> pd.Data
             return fetch_single_run(locations, run_time, forecast_hours=FORECAST_HOURS)
         except RateLimitError as e:
             if e.scope == "day":
-                # Waiting this out inside a live process isn't practical (resets on
-                # Open-Meteo's clock, not ours, and "tomorrow" is not a bounded
-                # sleep). Earlier this exact case fell through to the minute-retry
-                # branch, burned 5 retries x 65s uselessly, and crashed with a raw
-                # traceback — this script is resumable by construction (skips
-                # existing run_*.parquet files), so the right move is to stop
-                # cleanly now and let a later invocation continue once the quota
-                # resets, not to keep hammering an API that just told us to stop.
+                # Handled one level up, in main()'s outer loop: unlike the other two
+                # scopes, retrying here wouldn't make sense (the reset isn't a bounded
+                # number of seconds away — see main() for the day-boundary sleep).
                 raise
             if e.scope == "hour":
                 hour_attempt += 1
@@ -169,36 +175,49 @@ def main():
     print(f"Batches per run: {len(batches)} (batch size {BATCH_SIZE})")
 
     t_start = time.time()
-    n_done = 0
-    try:
-        for i, run_time in enumerate(run_times):
-            out_path = run_output_path(run_time)
-            if out_path.exists():
+    n_done = sum(1 for rt in run_times if run_output_path(rt).exists())
+
+    # Outer loop absorbs the DAILY scope specifically: sleep past a plausible reset
+    # and pick the fetch loop back up (it re-skips whatever's already on disk, so
+    # this is just "try the remaining work again later", not a restart). The
+    # per-request minute/hour scopes are still handled inside fetch_with_retry — this
+    # loop only ever sees "day".
+    for day_attempt in range(1, MAX_DAY_RETRIES + 1):
+        try:
+            for i, run_time in enumerate(run_times):
+                out_path = run_output_path(run_time)
+                if out_path.exists():
+                    continue
+
+                frames = [fetch_with_retry(batch, run_time) for batch in batches]
+                df = pd.concat(frames, ignore_index=True)
+                df.to_parquet(out_path)
                 n_done += 1
-                continue
 
-            frames = [fetch_with_retry(batch, run_time) for batch in batches]
-            df = pd.concat(frames, ignore_index=True)
-            df.to_parquet(out_path)
-            n_done += 1
+                if n_done % 10 == 0 or n_done == len(run_times):
+                    elapsed = time.time() - t_start
+                    rate = n_done / elapsed if elapsed > 0 else 0
+                    eta = (len(run_times) - n_done) / rate if rate > 0 else float("inf")
+                    print(f"[{n_done}/{len(run_times)}] {run_time} done "
+                          f"({elapsed/60:.1f}m elapsed, ~{eta/60:.1f}m remaining)")
 
-            if (i + 1) % 10 == 0 or (i + 1) == len(run_times):
-                elapsed = time.time() - t_start
-                rate = (i + 1) / elapsed if elapsed > 0 else 0
-                eta = (len(run_times) - (i + 1)) / rate if rate > 0 else float("inf")
-                print(f"[{i+1}/{len(run_times)}] {run_time} done "
-                      f"({elapsed/60:.1f}m elapsed, ~{eta/60:.1f}m remaining)")
-    except RateLimitError as e:
-        if e.scope != "day":
-            raise
-        remaining = len(run_times) - n_done
-        print(f"\nSTOPPING (not a crash): {e.reason!r}")
-        print(f"{n_done}/{len(run_times)} runs done, {remaining} remaining. "
-              f"This script is resumable — just re-run it once Open-Meteo's daily "
-              f"quota resets; it skips every run already saved in {WEATHER_DIR}.")
-        return
+            print(f"\nDone. {n_done}/{len(run_times)} runs available in {WEATHER_DIR}")
+            return
 
-    print(f"\nDone. {n_done}/{len(run_times)} runs available in {WEATHER_DIR}")
+        except RateLimitError as e:
+            if e.scope != "day":
+                raise
+            remaining = len(run_times) - n_done
+            if day_attempt == MAX_DAY_RETRIES:
+                print(f"\nGiving up after {MAX_DAY_RETRIES} daily-quota cycles "
+                      f"({n_done}/{len(run_times)} done, {remaining} remaining). "
+                      f"Re-run manually once ready to continue.")
+                raise
+            print(f"\nDaily quota hit ({e.reason!r}) — {n_done}/{len(run_times)} done, "
+                  f"{remaining} remaining. Sleeping {DAY_RETRY_SLEEP_SECONDS/3600:.0f}h "
+                  f"(attempt {day_attempt}/{MAX_DAY_RETRIES}) then trying again; exact "
+                  f"reset time isn't documented, so this polls rather than guessing it.")
+            time.sleep(DAY_RETRY_SLEEP_SECONDS)
 
 
 if __name__ == "__main__":
