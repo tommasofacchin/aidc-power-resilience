@@ -110,27 +110,43 @@ Le guidelines vincolano **solo l'input meteo** (§3.3). Lo storico degli outage 
 
 Regola ferrea nel codice: ogni feature deve essere funzione esclusiva di dati con timestamp `≤ issue_time`. Un solo assert centralizzato che lo verifica, non controlli sparsi.
 
-### 2.5 Dati di training
+### 2.5 Dati di training — aggiornato dopo la ricognizione reale (19 agosto)
 
-**Scelta primaria: allenare direttamente su feature IFS Single Runs, 2024-03-14 → 2025-08-31, su ~150 contee.**
+⚠️ **Cambio rispetto alla versione precedente di questo piano.** L'assunzione di partenza era EAGLE-I multi-anno (2014–2024) via Globus per costruire climatologia e training set ampi. Verificato sul campo: **la cartella Globus fornita dagli organizzatori contiene solo l'annata 2025 e un campione 2014 (nov–dic, l'avvio storico del programma EAGLE-I)**. Gli anni 2015–2024 non sono raggiungibili da nessuna fonte scriptabile trovata (Opendatasoft mirror: verificato assente per tutti gli 11 anni; figshare: solo 2014). Aggiorniamo la strategia di conseguenza invece di bloccarci.
 
-Motivazione: elimina completamente il mismatch train/test (allenare su ERA5 e predire da forecast è una distribution shift seria). ~17,5 mesi coprono le stagioni uragani 2024 (Beryl, Helene, Milton) e parte 2025 — eventi estremi in abbondanza.
+**Vincolo aggiuntivo che restringe ulteriormente la finestra utile:** l'archivio ECMWF IFS Single Runs parte dal **14 marzo 2024**. Il campione EAGLE-I 2014 è quindi **inutilizzabile per il training basato su IFS** (non c'è sovrapposizione: EAGLE-I 2014 esiste, IFS 2014 no). L'unica finestra con **sia** ground truth **sia** feature IFS disponibili è:
 
-Allenare su **molte più contee delle 5 target** è la mossa che dà volume di eventi positivi e generalizzazione. Le 5 contee di consegna sono un sottoinsieme.
+**Training set: 2025-01-01 → 2025-08-31 (8 mesi), su tutte le ~3.048 contee attive in EAGLE-I nella finestra di test** (verificate scaricando e ispezionando il file reale — non una stima).
 
-*Fallback / ablation:* pretraining su ERA5 (Historical Weather API, nessun vincolo di modello per il training) 2019–2025 e fine-tuning su IFS. Da fare **solo se avanza tempo** — è un buon paragrafo di ablation, non un requisito.
+Compromesso onesto da scrivere nel report: 8 mesi di un solo anno significa **nessuna diversità stagionale multi-anno** — niente Helene/Milton 2024, niente varianza interannuale. Copre però primavera (stagione tornado, aprile–giugno) e l'inizio della stagione uragani (giugno–agosto), quindi non è banale. Il volume compensa in parte: ~3.000 contee × 8 mesi × 96 intervalli/giorno è comunque un dataset ampio, e il problema è più di generalizzazione spaziale che temporale.
 
-### 2.6 Selezione delle 5 contee
+*Fallback / ablation, solo se avanza tempo:* il campione 2014 (nov–dic) resta usabile per un pretraining su **ERA5** (Historical Weather API, che copre 2014 senza il vincolo IFS) seguito da fine-tuning su IFS 2025. Buon paragrafo di ablation, non un requisito — e comunque marginale con solo 2 mesi di dati aggiuntivi.
 
-⚠️ **Trappola di leakage metodologico:** scegliere le contee guardando cosa è successo a settembre–novembre 2025 è look-ahead bias. La selezione va fatta **solo su climatologia 2014–2024**.
+*Se emergono altri anni EAGLE-I* (es. l'utente trova un altro DOI/collezione Globus per 2015–2024): reintegrarli è un miglioramento diretto della diversità stagionale, non richiede altro che ripetere l'ingest — vedi `code/data_acquisition/eagle_i.py`, che li individua automaticamente da `data/raw/eaglei_outages_<anno>.csv`.
 
-Criteri:
-1. Densità storica di eventi outage nella finestra stagionale set–nov (da EAGLE-I 2014–2024)
-2. Copertura EAGLE-I continua e affidabile (poche lacune)
-3. Diversità di regime meteo: costa atlantica/golfo (uragani), nord-est (nor'easter), interno (temporali convettivi)
+### 2.6 Selezione delle 5 contee — aggiornato
+
+⚠️ **Trappola di leakage originale:** scegliere le contee guardando settembre–novembre 2025 (la finestra di test) sarebbe look-ahead bias. **Non disponendo di climatologia 2014–2024**, la selezione si basa su **gennaio–agosto 2025** — che è comunque *prima* della finestra valutata e rientra nel periodo di training raccomandato esplicitamente dalle guidelines (fino al 31 agosto 2025). Non è la climatologia decennale originariamente prevista, ma non è nemmeno un leakage: i mesi valutati restano non guardati.
+
+Criteri (invariati nella sostanza, invariata la fonte dati disponibile):
+1. Densità di eventi outage gen–ago 2025 (non più "densità storica decennale nella finestra stagionale set–nov", perché quella finestra specifica non è nei dati che abbiamo — usiamo il proxy disponibile e lo dichiariamo)
+2. Copertura EAGLE-I continua nei 3.048 contee attive (poche lacune)
+3. Diversità di regime meteo: costa atlantica/golfo, nord-est, interno
 4. `total_customers` non troppo piccolo (contee minuscole → `x` rumorosissimo)
 
-Da documentare nella §2 del report con i numeri a supporto.
+Da documentare nella §2 del report con i numeri a supporto, **incluso il limite esplicito**: la selezione non riflette una climatologia pluriennale per assenza di dati storici accessibili, solo 8 mesi di un singolo anno.
+
+**Selezione finale** (eseguita il 19 agosto, `code/preprocessing/select_counties.py` → `data/processed/selected_counties.csv`):
+
+| FIPS | Contea | Stato | Regime |
+|---|---|---|---|
+| 72013 | Arecibo | Puerto Rico | Tropicale/caraibico — segnale più alto in assoluto |
+| 37119 | Mecklenburg | North Carolina | Piedmont/sud-est — resti di uragani + convezione |
+| 54005 | Boone | West Virginia | Appalachi/interno — ghiaccio + temporali |
+| 26097 | Mackinac | Michigan | Grandi Laghi — tempeste invernali |
+| 22071 | Orleans | Louisiana | Golfo/uragani — inclusa deliberatamente per copertura di regime nonostante il segnale gen-ago sia debole (il picco stagione uragani cade nella finestra di test) |
+
+Nota emersa durante l'esecuzione: ordinare per semplice conteggio di righe-evento è una trappola — riscopre solo le contee più popolose (Harris TX, Miami-Dade, ecc. avevano event_rate ≈99.9%, ma è un trickle permanente di guasti locali di routine, non rischio meteo estremo). Il ranking usato invece conta gli intervalli con `x > 1%` (evento reale) — vedi il modulo per il dettaglio.
 
 ### 2.7 Denominatore `total_customers`
 
