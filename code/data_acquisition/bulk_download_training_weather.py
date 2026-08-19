@@ -61,7 +61,9 @@ DAY_STRIDE = 2  # every other day — see module docstring for why
 BATCH_SIZE = 100
 FORECAST_HOURS = 72
 MAX_RETRIES = 5
-RETRY_SLEEP_SECONDS = 65
+MINUTE_RETRY_SLEEP_SECONDS = 65
+HOUR_RETRY_SLEEP_SECONDS = 62 * 60  # a 65s sleep against an hourly cap just spins uselessly
+MAX_HOUR_RETRIES = 10  # generous ceiling (~10h) so an unattended overnight run survives
 
 
 def load_training_locations() -> pd.DataFrame:
@@ -77,16 +79,27 @@ def load_training_locations() -> pd.DataFrame:
 
 
 def fetch_with_retry(locations: pd.DataFrame, run_time: pd.Timestamp) -> pd.DataFrame:
-    for attempt in range(1, MAX_RETRIES + 1):
+    minute_attempt = 0
+    hour_attempt = 0
+    while True:
         try:
             return fetch_single_run(locations, run_time, forecast_hours=FORECAST_HOURS)
-        except RateLimitError:
-            if attempt == MAX_RETRIES:
-                raise
-            print(f"    rate limited (attempt {attempt}/{MAX_RETRIES}), "
-                  f"sleeping {RETRY_SLEEP_SECONDS}s...")
-            time.sleep(RETRY_SLEEP_SECONDS)
-    raise RuntimeError("unreachable")
+        except RateLimitError as e:
+            if e.scope == "hour":
+                hour_attempt += 1
+                if hour_attempt > MAX_HOUR_RETRIES:
+                    raise
+                print(f"    HOURLY rate limit hit ({e.reason!r}), attempt "
+                      f"{hour_attempt}/{MAX_HOUR_RETRIES} — sleeping "
+                      f"{HOUR_RETRY_SLEEP_SECONDS/60:.0f}m...")
+                time.sleep(HOUR_RETRY_SLEEP_SECONDS)
+            else:
+                minute_attempt += 1
+                if minute_attempt > MAX_RETRIES:
+                    raise
+                print(f"    minute rate limited (attempt {minute_attempt}/{MAX_RETRIES}), "
+                      f"sleeping {MINUTE_RETRY_SLEEP_SECONDS}s...")
+                time.sleep(MINUTE_RETRY_SLEEP_SECONDS)
 
 
 def run_output_path(run_time: pd.Timestamp) -> Path:

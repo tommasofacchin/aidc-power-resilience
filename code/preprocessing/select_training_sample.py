@@ -26,8 +26,8 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 
-SAMPLE_SIZE = 250
-MAX_PER_STATE_PER_CELL = 4
+SAMPLE_SIZE = 100
+MAX_PER_STATE_PER_CELL = 3
 RANDOM_STATE = 42
 
 # The 5 counties selected in select_counties.py are always included on top of this

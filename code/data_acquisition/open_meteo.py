@@ -46,7 +46,21 @@ DEFAULT_HOURLY_VARS = [
 ]
 
 class RateLimitError(Exception):
-    """Raised on HTTP 429 from the Single Runs API so callers can back off and retry."""
+    """Raised on HTTP 429 from the Single Runs API so callers can back off and retry.
+
+    Open-Meteo enforces at least two separate windows on this endpoint (found
+    empirically, not documented precisely): a per-minute cap (message contains
+    "Minutely") that clears in under a minute, and a per-hour cap (message contains
+    "Hourly") that does not — a 65-second retry loop that's correct for the first kind
+    silently spins uselessly against the second. `scope` lets a caller pick the right
+    backoff instead of guessing from the message text itself.
+    """
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+        lowered = reason.lower()
+        self.scope = "hour" if "hourly" in lowered else "minute" if "minutely" in lowered else "unknown"
 
 
 _session = requests_cache.CachedSession(
