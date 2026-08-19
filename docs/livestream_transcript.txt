@@ -1,0 +1,1128 @@
+0:00
+October 31 uh and then we will have another
+0:05
+evaluation of the semi-finalist project who will uh go in evaluation and then to
+0:11
+the big finale in Germany. So the the evaluation for the big finale will be
+0:17
+between November 9 and November 19 and the big finale will be on November 20.
+0:24
+So that will be really short but we will keep in touch on the platform by
+0:29
+message. Hopefully normally every uh participant already received the topics
+0:35
+topic one or two depends which one you choose. And if you have any question
+0:40
+about it you can ask by message or at the end of the webinar if you didn't
+0:44
+receive any topics. That's it for me and I will ask to Elena
+0:50
+maybe to share a little bit information more information about each topics.
+1:15
+So Helena, I think you are muted.
+1:23
+>> Hello.
+1:24
+>> Hi. Yeah, thank you. Um, currently uh we are on a business business that's why we
+1:30
+have a little bit of issues but we can hear you clearly. Um, I will just hand
+1:34
+over to the technical team to also move ahead. So if um Stefan you are ready you
+1:39
+can take on. Thank you.
+1:46
+Yep.
+1:47
+>> All right. Great. I guess you can um hear me. You can hear us. We are sitting
+1:51
+here in Lond in our research center. Um I will now present for the next 20
+1:58
+minutes um the topic one of our take a winner challenge for 2026.
+2:05
+I will share my slides in a second. So topic one is about battery lifetime
+2:16
+early prediction um for BES. So for us in our company we have um
+2:24
+three core products for BES um namely residential systems, CNI systems and
+2:30
+utility scale systems. For all of them um we have completely different
+2:36
+degradation um conditions coming from different operating and environment
+2:40
+conditions. We have variable low profiles. We have different climate
+2:44
+variations. Um we have different um extreme ambient conditions. Um and so
+2:52
+the problem is that our customers when buying um um these best products um they
+2:59
+see these batteries as as an asset. Um but this asset because it's a battery
+3:04
+can age over the years. Um and loses capacity, loses its performance. Um this
+3:10
+means that already at the design of of our best systems. We need to consider
+3:16
+the aging conditions. We need to consider how the best is aging over the
+3:20
+years and how um our products um can lose performance um will degradate over
+3:28
+the years. So the impact of of accurate SO
+3:33
+estimation is quite high and we see them in in many different fields coming from
+3:37
+from um algorithm performance. So SOS is a direct um input for for other state
+3:45
+estimations for example SOC or or state of energy also for different charging
+3:50
+control systems or overall BMS decision makings. Um, SOS can be also used for
+3:58
+for safety detection or safety critical detection when we have a battery cell
+4:02
+that is behaving abnormal where we can see um fast degradation. Uh, we can
+4:08
+detect using SOS also um weak cell or or cells that just behaving abnormal
+4:14
+according to to the other cells in the system. Uh we also use SO for operation
+4:20
+and maintenance. So um how to operate a a bass in an optimal way. So um there we
+4:26
+want to have like an aging aware operation. We also use this um on plant
+4:31
+level optimization. So especially um you see this on the very right side. Um our
+4:38
+utility scale best is is used for energy trading. Um and you want to have your
+4:45
+assets that are used for energy trading. Um you want to use them as as long as
+4:49
+possible. And for this it's it's important to track your SOS as as um
+4:54
+accurate as possible. The technical problem for SOS estimation
+4:59
+is that you cannot directly measure SOS. You cannot directly determine it. Um SOS
+5:06
+um typically is measured or is defined in three different ways. You can you can
+5:11
+define your SOS according to the capacity that you're losing. You can
+5:15
+define your SOS according to the resistance that is growing over the
+5:18
+years. or you can define the SOS um in accordance to um the safe discharge.
+5:26
+Um for us through the whole um topic one through the whole um challenges we
+5:32
+consider SOS as um the SOS regarding to capacity. So how much capacity can we
+5:39
+get out of the battery at a certain um um time of of of the life? Um uh one
+5:46
+core problem is that when we design our systems our new systems we want to use
+5:52
+the newest battery cells with with high capacity with a very good performance.
+5:56
+But for these particular battery cells, we do not know very good how are they
+6:02
+aging over the years because the products just came out like some months
+6:06
+ago. Um and maybe we just can make some um accelerated aging tests at a certain
+6:12
+um testing points. This means we only have a small amount of data in order to
+6:17
+design the best systems that should operate for 10 20 years. So one um idea
+6:24
+um to to solve this problem is you use battery aging data from from different
+6:33
+cells from in in your case here um you have also open source data sets that you
+6:39
+can utilize. But typically you use your battery um data that you have um
+6:44
+gathered over the last years and you want to train or calibrate your model
+6:48
+according to this battery um in a way that it knows the core physics. It can
+6:53
+understand it similar to a um uh an AI algorithm that can detect cats and dogs
+7:00
+that is trained to detect eyes and ears. So this kind of neural network you can
+7:05
+quite easily fine-tune in accordance to to the texts also human beings and
+7:11
+similar you can do with batteries so that you that you pre-train a model um
+7:16
+to understand the core behavior of of battery cells and you fine-tune it with
+7:21
+your um small amount of of target data such that you are are quite accurate on
+7:28
+this. Um so the overall pipeline that you will have um for for the challenges
+7:35
+and for the first challenge in particular you will work with so-called
+7:38
+static aging data. So we have um static aging tests at specific
+7:45
+conditions. Um your first task is to handle this data um to to get familiar
+7:50
+with it to understand how the SOS is is developing over over cycles. um you need
+7:56
+to select specific features in order to have like the best possible information
+8:01
+for your for your model. Um then you can select the model itself. Um there are um
+8:08
+different models out there that are used for for this particular task. Um what
+8:13
+definitely is is is quite often used are different kinds of neural networks. But
+8:18
+you can also think about how to combine um neural networks with physical
+8:22
+approaches. Um going into um hybrid models um one approach for this are are
+8:28
+physical informed neural networks. Um for this we have um particular data
+8:33
+provided to you uh that you can utilize for this. Um but you can also think
+8:38
+about equivalent circuit models um combine them with neural networks and
+8:43
+the final outcome should be the SOS prediction down to 70%
+8:49
+um over cycles. Um the goal is for the
+8:55
+target data set. So we will not evaluate you with open source data. We will only
+8:59
+evaluate you with ah 102 amp per hour LFP cell where we have some um unseen
+9:07
+data that you have not received. Um the data all of our data is somewhere
+9:12
+between 25 55° C somewhere between 0.5 C and 1 C. So in this space your model
+9:18
+need to um perform quite accurate and quite robust. For the challenge itself,
+9:26
+we have in total five different tasks you can say. Um you will start with task
+9:31
+one, the data access and processing. Um get familiar with the data. Um you need
+9:35
+to handle specific um um outliers and there's also some missing data. Um you
+9:41
+can then utilize um open source or public uh data sets
+9:46
+to pre-train your model. In the next step, you should use the target data set
+9:51
+in order to fine uh fine-tune your data. Um most important here, I think is that
+9:56
+you utilize different machine learning techniques um for cross validation. Um
+10:01
+that you're really sure that you're not overfitting, which is very likely um
+10:06
+when you only have like um this small amount of data that you are sure that
+10:10
+your model is behaving over the whole um domain or or specified domain space.
+10:18
+And then the final goal is to predict the SOS over cycle number down to 70% of
+10:23
+SOS including in in particular the knee points or knee point behavior for some
+10:28
+conditions. And then finally um the validation and submission for validation
+10:33
+it will be up to you how you validate your model. How can you say that your
+10:37
+model is accurate? Do you want to consider s error cycle error like how
+10:42
+much cycles you are away from a specific number? Um things like this you need to
+10:47
+consider. You need to come up with a um um validation routine
+10:52
+to to judge your your quality your performance of the model. In particular,
+10:57
+we have three um challenges that you will come across during this challenge.
+11:02
+Um first is data handling, normalization and feature selection. What we mean here
+11:06
+is that you need to be able that out of the raw sensor data that you have
+11:11
+received, voltage, current, temperature, um selecting the right features in order
+11:16
+to predict um the SOS loss and SO trajectory.
+11:21
+Um in specific um one of the maybe toughest challenges will be that the
+11:28
+open data sets that you may use have different cycle conditions. they have um
+11:33
+different cell considers. Um in particular, we have small cylindrical
+11:38
+cells for most of this open source data sets.
+11:41
+In addition to the three data sets that we send out, there are more data sets
+11:44
+using LFP cells. But still we have always the the we need to have like a
+11:50
+transfer between um the data that you use for pre-tain um and then the target
+11:58
+data sets. So this transfer you need to be able to to to link this in
+12:02
+particular. Um we listed this also in the description. We sent out already
+12:06
+that how the battery cells are cycled has follows a very clear um um structure
+12:12
+protocol where we have like the 30 minutes rest between cycles where we
+12:16
+have full DOD and all of these conditions may not be um the same for
+12:21
+the open source data sets and then last but not least we have the knee points
+12:26
+for particular conditions. You see in the plot uh plot above here uh that for
+12:32
+some conditions you will see a very clear knee point. For some conditions
+12:36
+you only see like a small knee point behavior where we come from a linear
+12:41
+aging phase towards a nonlinear aging phase. And this kind of behavior we we
+12:47
+um expect that your model can deal with this um such that in this case here that
+12:52
+we can model also this um like changing degradation rates over time um such that
+12:58
+we have like a accurate SOS model how are we evaluating um so we have four
+13:05
+core metrics so 70% um of the of the score will come from the model
+13:11
+performance for this we will also have a leader
+13:14
+board um that we will update regularly. Uh typically um depending on how many um
+13:20
+submissions we will have um typically once per week but this really depends on
+13:24
+how many submissions we we will receive. Um in addition to the model performance,
+13:29
+we will evaluate the robustness, the efficiency also the accuracy. We will
+13:34
+evaluate the technical innovation, the interpretability like how do you
+13:38
+understand the current limits of of your model? when is the model behaving good
+13:43
+and when not. And then last but not least, it's the code quality and
+13:47
+reproducibility which um should follow specific standards uh um for Python
+13:52
+coding um that you that you should use and um with these four matrix um we will
+13:58
+um derive our overall score and this we will use to judge who or which team will
+14:04
+go to the next stage. Then for the submission guideline
+14:09
+itself, we will provide you after this webinar a a template, a folder structure
+14:15
+that you can see here on the right side. Here you have um uh more details even um
+14:21
+read me and and also specific file that that describes the the submission
+14:27
+process um that you can follow through. We have like a um a folder structure
+14:34
+where you can um develop and implement your model. Uh also where you can
+14:40
+evaluate your model and where you should run your model, train, test and
+14:44
+validate. Um for this we have also the data here that uh the folder that we
+14:50
+will provide to you. We only have some um sample data but you received already
+14:54
+the the target data that you can input there
+14:57
+for the submission process itself. Um it's important that you that you follow
+15:02
+this because uh only if you in the in the final stage you can run the validate
+15:08
+submission.py and there you will receive a message
+15:13
+that uh submission or the validation of of your submission is is is a success
+15:18
+and then you can upload your submission using this folder structure and only
+15:22
+then we can we can evaluate your your model. If this is not successful then we
+15:28
+will not uh evaluate your model. So therefore it will be important for you
+15:33
+to follow this clear structure for example that you provide also
+15:36
+requirements txt. We already have like a template here that it's clear that you
+15:41
+follow this and insert all the the libraries that you are using for your
+15:46
+model that we can really have like a transparent
+15:49
+um process through all of this. And uh in the final stage when you have
+15:56
+finally submitted your model, you will see in the leaderboard that uh your
+16:01
+submission is evaluated your specific score that we um um for this we are
+16:06
+using our um evaluation data and uh out of this we will decide which
+16:14
+teams will go to the next stage. And with this I'm actually at uh at the
+16:22
+final slides. Maybe one more that will be interesting
+16:27
+for you. I want to show you um to use the last minutes I have is um
+16:34
+>> Yeah.
+16:35
+>> Yeah. Yeah. For this I will share the the code structure itself.
+16:49
+Um and when you run the the validation script, you see that we
+16:56
+have a specific um unit test that should um pass through
+17:02
+um this test. And if everything passed, then you will see here the submission is
+17:07
+ready. All checks are passed and you can upload your your submission. Um you see
+17:12
+here that we have clear submission um guidelines and instructions. You can go
+17:16
+through all of this. If you still have questions, you can um you can I mean now
+17:21
+we have a Q&A and in addition um you can ask us. We have um four to five mentors
+17:27
+that will ask or or answer your questions if you have um for you. The
+17:33
+most important folder here will be um the this u my model here where we have a
+17:38
+template provided and also an example where you can go through and um your
+17:43
+task will be um to update the model templates with your specific model
+17:50
+and then we will be very happy to see your submissions and um uh curious which
+17:57
+solutions you can come up. Thank you. There are some questions in the chat.
+18:14
+>> Um, can I read them to you and you can answer them?
+18:22
+>> I'm checking.
+18:23
+>> Okay. Like the first question is um what is the next stage particularly?
+18:29
+So um the next stage basically means now we are in challenge one uh what I just
+18:36
+described. So you will receive by um end of the day this template structure that
+18:43
+that um I just presented to you. You can use this template structure to develop
+18:50
+and implement your model. Um and then you can submit using the website your
+18:56
+your um models and then we will evaluate and we will have regularly an update of
+19:03
+the leaderboard. Uh for you personally like the first task that you have now um
+19:09
+you already have the data received. You already have the links to the open
+19:12
+source data. You so you actually could have start started already um to get
+19:16
+familiar with the data. So I think this is maybe the first task that you have
+19:19
+now. Um for the second question um should we collect data by ourselves or
+19:25
+the data will be provided? So you should have received a link to
+19:31
+our target data set and also a description where we have three links to
+19:36
+open source data that you can utilize. And the next question is
+19:45
+so we just need to finish challenge one. Yeah. So here we are only talking about
+19:50
+challenge one. All of what I just discussed here is is basically challenge
+19:54
+one. So after this challenge one, we will evaluate all your models and come
+20:00
+up with a specific score and out of the score together with these um four
+20:06
+different classes of of how we evaluate your your
+20:10
+model. We will decide which team will go to the next stage and in the next stage
+20:14
+you will have a second challenge. Yeah. Um
+20:26
+okay I do not want to go through all the all the questions now because after um
+20:33
+the presentation of topic two we will have a Q&A session. So I do not want to
+20:38
+um um utilize too much time now but um we will answer your questions um in
+20:44
+parallel in the chat and if they are still not answered you can um raise your
+20:49
+questions after the presentation of topic two
+20:55
+>> okay when um it would be your time now to introduce your
+21:01
+>> because I I was here I didn't realize Uh yeah uh our expert uh Mr. Bosau
+21:13
+Bosa will uh introduce uh the topic too. So uh Mr. Bosau could you please uh
+21:22
+introduce uh uh the topic too for for all the participating teams.
+21:32
+Do you have the the document? Yeah.
+21:36
+>> Okay. Thank you.
+21:38
+>> Could you share the document?
+21:40
+>> Oh, I will send it to you. I I will uh send it to you again.
+22:37
+Yeah. Hey everyone, thanks for attending the meeting today.
+22:44
+So for for the the second challenge call is the AIDC resilience algorithms
+22:50
+challenging is a probably just used for the predicting the AIDC's power supply
+22:55
+by resilience in the extreme scenarios. Uh as everyone generally most like
+23:01
+recently it's like data centers has been growing very fast. So uh and also like
+23:07
+this is important to us to think about like particular issues
+23:14
+of power supply architectures. So how they will eventually um affecting the
+23:21
+the the the critical loads the resilience. one here when we talk about
+23:26
+the resilience is may uh think about like outage if they have the power
+23:33
+outage event or the the the most most important is keep the the load uh
+23:39
+availability. So that's why we have these uh uh topics. So uh here's we
+23:44
+provide um four kind of uh uh typical power supplies architectures for the uh
+23:53
+data centers including like the UPS 2N UPSDR HBDC and direct uh main supplies
+24:02
+the 2N solutions. So and for this topics we uh we would like to spec specifically
+24:11
+working on the like uh you probably think about like the
+24:17
+extreme event the event like uh uh the extremist brothers you probably have
+24:23
+some outage from the May power clients uh all these can be uh uh take into
+24:30
+account and also like uh but you know like based on different architectures of
+24:37
+power supply uh of power supplies they probably for example we can just simply
+24:44
+side like they probably just have a backup right they have a backup settings
+24:49
+that even one uh one uh one pass of prop slice that has been done they still can
+24:56
+keep the availabilities of eventual go uh and also uh for examples the further
+25:04
+if If you have the batteries and the batteries even the the main line like
+25:08
+all happened at the grid distribution levels or transmission levels is still
+25:14
+to provide uh the the energy uh supplies for for short or longer period. So
+25:21
+that's make the different uh uh different errors they probably have a
+25:26
+different uh event. Okay. uh different architectures they may have a different
+25:31
+event different risk as well as like they probably have a different solutions
+25:36
+to make sure the availabilities of the load that's why this uh these topics
+25:42
+come from so uh so here's we we just combined extremist weather scenarios as
+25:49
+well this is probably the it's a coupled uh coupled questions they think about
+25:56
+the weather the impact as well as like the architectures
+26:01
+uh uh modeling. So combine these two top challenges this uh these questions
+26:08
+coming out. Let me take the next page.
+26:15
+So what we uh uh here we are talking about the the uh I hope like all the
+26:22
+participate to de develop the site levels resilience forecasting models for
+26:27
+these four typical the power supply attectors as I mentioned okay and uh uh
+26:35
+here is the they need to the first thing they probably is to understand like the
+26:40
+extremist event samples like if there's a high there's some extremist for
+26:46
+example if there's a a very uh uh big uh temperature different okay or they
+26:53
+probably have a that that means like the load uh I I just give you examples I
+26:59
+think think that the the the the variations of the load or the power
+27:04
+supplies may very very risky okay and if they have uh some areas that they
+27:11
+probably take suffer from like extremist code extreme extremist are hard they
+27:16
+probably make it more challenged to the to the power supply side. So the first
+27:20
+steps that we we hope like you understand like the what the extremist
+27:24
+event the extremist val introduced in the beginning it's just
+27:31
+like the part the power supplies uh uh topologies okay they including they they
+27:38
+combine uh sometimes the the futures uh failures okay and they sometime they
+27:45
+they even can provide the additional to the first systems. So this is also uh uh
+27:54
+the also trade off. Okay. Yeah. So this is a
+28:01
+temp temporary this is the all the all the challenges the frequency on and uh
+28:07
+so that means like uh for our forecasting models they should be uh
+28:12
+think about like the past uh uh past datas uh weather datas
+28:20
+uh sometimes the generation status what kind of the data should be fine okay and
+28:27
+also you need to Think about like the different architectures combined with
+28:31
+this uh this uh this uh areas this uh this this uh when we see
+28:38
+the like geographies informations the the locations that probably combine the
+28:43
+props relate to the the the the local uh event like they probably have a
+28:52
+strong grid or weak grid sometimes. So this this is very uh this is the it's
+28:59
+it's may like from the weather when we give the the location of the aid we
+29:06
+think about the the the local weathers they think about the local sometimes the
+29:11
+even the uh grid code but the these times we don't including the grid code
+29:16
+here so but we think all these conditions the as the constraints or
+29:22
+limitations and then we analyze This is based on different architectures of aidc
+29:28
+how we can make the predictions for our theability. inverse instead of risk to
+29:36
+the to the eventual goal uh the eventual load.
+29:43
+So uh so this is some some things I think you
+29:49
+probably if you have some questions you can let let us know but we generally
+29:54
+just provide you know like u for wind forecast or powerful forecast based they
+30:01
+they they they do have some different definitions by the utilities or
+30:07
+customers load but here is we just focus on two types of forecastings
+30:13
+uh they had power supply risk forecastings uh with 30 48 hours the
+30:18
+forecasting for reasons uh at the one hour uh one hour resolutions and we also
+30:25
+think about like you can provide uh the what we call is extremely short terms uh
+30:31
+forecasting it's up to six hours horizons with every five minutes so this
+30:38
+is the the generalist um the um uh the questions. Okay. So the in the the last
+30:47
+questions when we talk about the data side I think that the uh quite a lot of
+30:51
+uh uh as far as I know uh you some of the participate may have the questions
+30:56
+particular for the set power supply architectures configuration parameters
+31:01
+to see if they provided by uh uh by the organizations community or they provide
+31:07
+by something so like that. So I I I perhaps make a little bit explanations
+31:12
+here. Uh what we try to for this challenge if I give a if I let you know
+31:19
+to uh uh with a given power uh data centers or with a very uh
+31:27
+details configurations parameters I believe for any participate here you are
+31:33
+very talent uh for sure. So uh probably too easy. Okay. So for these questions
+31:39
+is may uh our target is try to build general or generics models for the risk
+31:48
+forecasting that means like they probably you probably can collect the
+31:52
+any uh reasons because they they they kind of think about like uh transfer
+31:57
+learnings technicals but the transfer learning is just examples not all uh you
+32:03
+may have uh you probably think about like okay I
+32:08
+we we have the the your architectures uh configurations parameters as variables
+32:15
+or input to your models. So that's what we hope. Okay. We hope like for any this
+32:21
+your model that the your uh the models you develop could be uh be more general
+32:27
+for all kind of this research or all this uh kind of forecasting. So that
+32:33
+means like uh when we uh give a uh uh uh data centers we probably provide the
+32:41
+details configurations that we pro probably provide the detailed uh GIS the
+32:47
+geography information at that times you probably still can refine your model a
+32:53
+little bit but when I see the refund it's just like a change the input or
+32:58
+some specific uh coefficient then they probably can
+33:03
+provide a very good result. That's what we said. So any data that you can
+33:08
+collect could be used for your research and eventually is the one the
+33:12
+validations that we probably provide all the detailed configurations for uh for
+33:17
+for a given for a given data center site. with all kind of the the
+33:23
+informations when I see the all kind of informations here I have to uh mention
+33:29
+when we set this it's not very very details like the inverters the
+33:34
+parameters the water algorithms of the bass no not like that it's it's made
+33:39
+like a product uh scope it's all the specifications that you could have for a
+33:45
+bass for a PV for a load you will have not details designs. So you cannot use
+33:54
+that because no one's will let you know the details designs of the the the
+34:00
+product right but besides all the specifications of the devices we also
+34:05
+will provide the topologies the information like uh yeah I in in
+34:11
+practical case even that parameters we may not know but in in these testings we
+34:16
+will provide like uh the RLS the resistance for impedance the the
+34:22
+networks I would like to know. Yeah. Yeah. This the the the
+34:30
+uh the the the computation rules I think probably is the very uh details and you
+34:36
+need to provide the details uh the technical report uh predictions result
+34:42
+fails uh all the all the result. So for is
+34:48
+very similar and here is some template specifications.
+35:03
+Yeah, this a score uh criterian. I'm not sure if they have a have a questions
+35:11
+here but it's just like uh what we we uh uh uh there's many challenges there's a
+35:19
+uh the basic lines it's for day forecasting up to eight for eight uh for
+35:25
+48 uh forecasting horizons and the uh short terms would be some add okay and
+35:32
+besides that if you models could be you you could develop the four models
+35:38
+examples uh one uh specific to four different uh topologies that's totally
+35:44
+acceptable but if you could have a one models kind of uh adapted to different
+35:50
+kind of architecture step even better it's a it's all I I don't we we don't
+35:56
+want to make too much limitations for your ideas but the general ideas or the
+36:03
+goal of this uh challenges is just try to have to develop a generic
+36:11
+uh generic uh forecasting model risk forecasting models for the AIDC
+36:17
+scenarios. So uh scalable general generic and scalable would be
+36:24
+the most important part for this. Yeah, this yeah sorry I props like some uh the
+36:31
+very details the flight tourist but I think this very clear in document.
+36:42
+>> Okay, thank you. Now we're heading to the Q&A session for both topics. So if
+36:49
+you guys have any questions um feel free to unmute yourself and ask the questions
+36:55
+now. Any
+37:11
+questions?
+37:20
+>> Okay, there's one question in the chat chat for challenge one. So basically
+37:27
+creation of S parameters according to us using the formula available in open
+37:33
+world and then you will evaluate our approach and model right
+37:39
+>> Stephan I think that's for you the question
+37:43
+>> um yeah exactly so we only have the goal that the model should be able to predict
+37:49
+the s down to 70% for our target data data set
+37:56
+in the specified parameter domain and how you are doing this, how you are
+38:02
+achieving this is up to you. How which features you are selecting, which model
+38:06
+you are selecting, um which loss function you are selecting, how you are
+38:11
+evaluating, all of this um um is completely open. We do not want to um um
+38:17
+set boundaries here. Um the only goal is is um again is predicting the SOS down
+38:23
+to 70% with only a small amount of of of fine um tuning data. Um so this is is is
+38:31
+completely free.
+38:33
+>> Yeah, we have
+38:35
+>> okay another question um also for challenge one. So final evaluation is
+38:41
+for overall model and its output error graphs and report disability and not
+38:47
+limited to a predicted output file.
+38:50
+>> Yeah. Yeah. So we have um in the presentation um I I showed you four
+38:56
+different um classes that will be evaluated and
+39:00
+they are weighted and for sure the most important is the model performance where
+39:05
+we are evaluating the model robustness, the model accuracy and also the model
+39:11
+efficiency and this counts around about 70%. And
+39:16
+then we have um three other topics that are not that heavy counted for the final
+39:21
+score but also um like the the technical innovation and uh reproducibility and
+39:28
+especially also the explanability. So um it should be clear that that you are
+39:32
+aware of when the model is is behaving good or or what are the limits of of the
+39:38
+model that you're providing to us. And uh this you can find in in the final
+39:45
+um template that we will provide to you is also described in the submission
+39:50
+guideline and you can you can use this and just document there in the and also
+39:56
+in the readme together with a report if you want to provide us the the results.
+40:03
+There is another question but I don't know for which of the two challenges. I
+40:09
+read the question then maybe the person who has asked it can also clarify. Does
+40:13
+the model need to be interpretable or does it just need to archive the lowest
+40:18
+RMS? Yeah.
+40:22
+>> So, uh just it's actually
+40:27
+goes in a good direction because um what you will find out when you will start a
+40:32
+challenge that it could be that your model has a quite low RMSSE but still is
+40:40
+not able to have a very good um SOS prediction down to 70%. because um you
+40:47
+you can maybe see that the maximum SOS error is still quite high but the RMSSE
+40:53
+is low. So this is exactly something that that we that we want to have from
+40:58
+you that that you will be able to judge your own model that you are able to to
+41:03
+understand that when is your the model actually behaving good or not for the
+41:08
+six conditions that we provided to you. So I I here I can just recommend that
+41:13
+that you can you should think about different error metrics to use to to be
+41:19
+sure that your model is really stable and and accurate.
+41:26
+>> Okay, there is another question for topic one. Can we collect other
+41:31
+opensource data sets for model training besides the data sets provided in PDF?
+41:37
+>> Yeah. Yeah. Yeah, definitely. Okay, then I'm going ahead with the next
+41:44
+question. Um, maybe this is a repeat question, but does challenge one for
+41:48
+topic one needs to be submitted by 1st of September slash 24th of August?
+41:55
+Um, so you are asking about when it has to be submitted, right? So then it's
+42:01
+24th of August.
+42:07
+>> Okay, let me see. For topic two, um are both tasks A and B to be
+42:15
+submitted by 24th of August? Okay. Yeah. Um
+42:21
+you need to submit by 24th of August. Yes.
+42:25
+The next question. Challenge one. When will be participants be provided the 102
+42:32
+ah fine tuning set data?
+42:38
+>> Yeah. this data set um the team already sent you a message with the link in it.
+42:46
+Maybe you have not found the link because it's so you need to click
+42:51
+directly on on the word data set and then there should be a link open where
+42:56
+you can download um the data set from from Google drive.
+43:00
+So the data set was actually already sent out. If not please um after the
+43:05
+webinar you can um write us again a message and we will check.
+43:12
+>> Okay. Next question is for challenge two. Is the prediction task needed to be
+43:18
+real time?
+43:21
+>> Yeah. this uh uh you make explanations the the the predictions could be could
+43:28
+not be necessary for real time. is a day ahead. You can you can have it record uh
+43:35
+recordings or not recordings would be fun. And it's a day ahead is you can
+43:40
+think about like every uh every uh uh 24 hours the for update for the for the uh
+43:48
+for the uh for the short terms ones the tax uh uh tax uh tax b uh you could uh
+43:58
+update every one hours should be one.
+44:03
+>> Okay. Next question is also for topic two. Could you please clarify which
+44:07
+deliverables are required specifically for round one? Should participants
+44:12
+submit the technical report, prediction results and complete code base at this
+44:16
+stage or only a subset of these materials.
+44:31
+>> Mr. Bosau, could you maybe answer the question? Oh uh yeah I I think like uh
+44:37
+for for the details report it's it's a need to be uh submit uh full technical
+44:45
+report u with the prediction report.
+44:51
+Yeah, I I think that they uh uh maybe need a details methodologies, the
+44:57
+algorithms and the preliminary result should be fine.
+45:04
+>> Okay, next question is for topic one. What variables should be considered as
+45:09
+input for the s prediction model? For example, should we include cycle
+45:14
+capacity, temperature, c rate or other operating conditions?
+45:19
+>> Yep. here you're also completely free. Um the only thing that you need to
+45:23
+consider that um when you train the model with open source data and you want
+45:29
+to fine-tune it with our target data set that um you need to have like it on the
+45:35
+same dimension. So for example for our target data set we have 100% DOD. So
+45:41
+this means every cycle is like a full equivalent cycle. If you have a open
+45:46
+source data with different DoDs then a cycle there may not be referred to a
+45:50
+full equulence cycle. So about this you need to be aware that you that you can
+45:56
+transfer the knowledge from your um pre-trained model to the um to the
+46:01
+fine-tuned model and and have like the same normalization. But unless this you
+46:07
+are completely free which um features or or input data you are selecting.
+46:16
+>> Okay. The next question is for topic two. Could you clarify the exact
+46:22
+definition of the regional outage proportion X including how it is
+46:26
+calculated um specially and temporarily and whether participants are expected to
+46:32
+derive X from the raw NA first outage data or whether it will be provided
+46:38
+directly.
+46:40
+>> Okay. uh so for these questions I I think and the proper uh proportions here
+46:47
+it's just like uh for outage forecasting uh probabilities is a it's a probability
+46:54
+uh probiotic uh forecasting uh result so uh it's coming from uh so just like what
+47:01
+I explained uh about the the topics is coming from a written outage okay uh so
+47:09
+that means like This is um think about this is common questions. We think about
+47:14
+like outage probabilities uh first and one it have the the outage for examples
+47:21
+they probably will uh uh uh will affect by the your power supply artifactures
+47:27
+right because just like what I said if you have a backup batteries or not all
+47:32
+these could be combined and to eventual impact the the load availabilities. So
+47:38
+this is the what we call as prohibitions of audit we provide some reference datas
+47:44
+uh for for this kind of uh uh event. But again just like what I said these topics
+47:51
+besides the the the modeling like forecasting algorithm itself the most
+47:57
+important part is that we try to have these algorithms to be uh to be generic.
+48:03
+So that means like any datas that you could use the temporals per what
+48:07
+whatevers you depends but eventually what we will provide the test systems
+48:12
+with GIC's latitude and longitude you could use that uh to uh uh some ideas
+48:20
+this refine new profiles I don't know that it's all depends on your uh ideas
+48:26
+so any any method and any innovations could be acceptable
+48:34
+Thank you.
+48:35
+>> Thank you. Next question. Does topic two have the same submission folder
+48:40
+structure as topic one?
+48:58
+>> Oh yeah. Yeah. Stephan, can you answer this question, please?
+49:05
+>> I I think it's a question for topic two, but uh I mean I don't think so because
+49:11
+the the folder structure that we have is is particular for for our topic. But I
+49:17
+think in in general um this could be generalized such that
+49:22
+it can also be used for topic two. I don't see a problem there.
+49:34
+Okay, let's move ahead. There is a more general question. What exactly happens
+49:40
+in the second stage? Do we have to solve new task there or submit more info about
+49:45
+our project? This question is for both topics.
+49:52
+>> So to answer it for for topic one. So the first challenge um you maybe saw
+49:58
+this on the first on the first slide, the stage one or like the challenge one
+50:04
+is about static aging and the second challenge if you um got like evaluated
+50:11
+positively and you can you can make it to the second challenge or to the second
+50:15
+stage will be about the dynamic aging. So what happens um like how does
+50:22
+degradation and aging look like under dynamic or or real world conditions.
+50:28
+So and for this you need to basically have like um a a new a new challenge for
+50:34
+for for this topic and um you'll also develop a new model but this model can
+50:40
+also be based on whatever you are doing in the first stage.
+50:44
+So yeah.
+50:53
+>> Okay. Another question. Um the it came up in the Richard group. How can we
+50:59
+ensure that input variables set independently by participant teams are
+51:04
+consistent with those used in farway test? For example, adopt 10 input
+51:09
+variables while F uses 12 input variables.
+51:13
+>> Yeah. These are good questions. Uh and u what the first thing I have to say we
+51:18
+don't have a internal testing. So we just provided all the informations that
+51:23
+compares the result among all the participant.
+51:27
+uh the as what I uh mentioned in the in the uh challenges uh we provide all the
+51:35
+necessary datas of uh uh per product uh for any product could be collected like
+51:45
+we provide specifications datas of all the devices
+51:50
+uh and we provide the GIC informations of the site location uh we provide
+51:57
+uh some modeling parameters of the technologies
+52:01
+that that's all. Yeah, there's a um you cannot think about like too um too much
+52:09
+input because uh some details of uh the particulars relate to the design of the
+52:15
+preliminary devices that is not possible because for any real project you cannot
+52:20
+have the details parameters uh from the manufacturer for sure. So all the
+52:28
+informations that you can see from uh public uh non particulars from the
+52:34
+specifications of the devices we will provide. Yeah. So when you select the
+52:40
+input I suggest like find the input from the okay for the best they probably have
+52:45
+the rated powers the rated some uh rated uh um uh words and uh times uh size
+52:56
+whatever you need and what specific uh uh u uh features you you could have.
+53:02
+Yeah. Uh but not the details of uh the design parameters.
+53:09
+and all the informations that you have uh uh uh you you you can find from the
+53:15
+test case uh it's a it's a it's a is we don't have the internals testing it's a
+53:22
+how your result is compared with each other yeah
+53:27
+>> the next question is also for topic two is there also specific validation for
+53:32
+submission of topic Hey,
+53:46
+>> our discussion would be also for you. Uh maybe Ran can you jump in?
+54:08
+>> Yeah. Yeah. So Mr. Bos uh this question is also for us
+54:16
+validation for submission. Let check
+54:29
+validations there also specific validations there
+54:37
+>> uh to be honest uh this specific specific validation uh validation
+54:45
+>> could you elaborate more
+54:48
+>> yeah this this the the the things is like you uh based on the testing systems
+54:53
+you will provide like your um your uh uh your forecasting result right and we
+55:01
+compare with the result we have we we have the datas of the the real
+55:06
+operations that based on that uh that's that's definitely could be
+55:12
+compare your uh your uh your evaluations your forecasting for sure. Yeah.
+55:21
+Okay, there is another question for topic two. Is there an equivalent
+55:27
+extreme weather event data set for the UK that you would recommend? If we
+55:31
+choose to use the NF data set, should we construct our own
+55:37
+extreme weather indicators directly matera
+55:43
+event labels?
+55:44
+>> Yeah, that that's for sure. Yes. So we uh uh think about like the the final
+55:49
+result you submit. It's just the forecasting risk forecasting that is
+55:54
+compared as the the the the final testing result. So these kind of labels
+56:00
+or the event forecasting is something I would like to see is the in uh in middle
+56:07
+the uh uh uh uh variables that they probably some like power supplies the
+56:12
+models the input. I if I I can see that uh that's that is okay. It's all your
+56:18
+decisions. Yeah.
+56:22
+>> So the final result is responsible for the the the the the
+56:26
+for the risk for casting only.
+56:33
+>> Okay, that was the final question. So last round basically. So does anyone has
+56:40
+any more questions? Otherwise we would close the meeting at this point.
+56:45
+>> Maybe.
+56:57
+>> Okay, it seems like that all of the questions were answered. Thank you so
+57:03
+much for um participating in this meeting today. The meeting will be um
+57:10
+shared with each single one of you. And if you have any more questions, don't
+57:15
+hesitate to send us a message. We will try to respond to to you all of you guys
+57:19
+as soon as possible. Thanks a lot and have a nice day. Bye.

@@ -1,0 +1,348 @@
+# Piano operativo — Huawei Tech Arena 2026, Topic 2 (Phase 1)
+
+**Aggiornato:** 19 agosto 2026
+**Deadline:** 24 agosto 2026, 23:59 CET → **5 giorni di lavoro**
+**Obiettivo interno:** pacchetto completo pronto la sera del **23 agosto** (1 giorno di buffer).
+
+---
+
+## 0. Cosa è cambiato rispetto al piano precedente
+
+Il documento `docs/submission_guidelines_phase1-AIDC.docx` sovrascrive diversi punti di `docs/rules.md`. Dove i due divergono, **vincono le submission guidelines**.
+
+| Punto | Vecchia assunzione (rules.md) | Regola effettiva Phase 1 |
+|---|---|---|
+| Ground truth | NaFIRS, UK | **EAGLE-I, USA** (contee + FIPS) |
+| Target | risk score sito-specifico | **solo `x = customers_out / total_customers`** |
+| Architettura AIDC | 4 topologie, sigmoide (k, x0) | **fuori scope** — rinviata a Phase 2 |
+| Risoluzione Task B | 5 minuti | **15 minuti** (granularità nativa EAGLE-I) |
+| Siti | forniti dagli organizzatori | **5 contee scelte da noi**, da giustificare |
+| Meteo | Open-Meteo generico | **solo ECMWF IFS HRES via Single Runs API** |
+
+**Conseguenza pratica:** tutto il lavoro su UPS/HVDC/2N/backup duration è rinviato. Phase 1 è un problema puro di *forecasting meteo → outage ratio a livello contea*. Non spendere tempo sull'architettura elettrica.
+
+---
+
+## 1. Il deliverable esatto
+
+Tre componenti, tutti obbligatori (manca uno → non viene valutato):
+
+1. **`report.pdf`** — 3–8 pagine, esclusi appendici
+2. **`predictions.csv`** — Task A + Task B insieme, distinti da `task_id`
+3. **`code/` + `README.md`** — pipeline completa e riproducibile
+
+Struttura pacchetto suggerita dagli organizzatori:
+
+```
+submission/
+├── report.pdf
+├── predictions.csv
+├── code/
+│   ├── data_acquisition/
+│   ├── preprocessing/
+│   ├── features/
+│   ├── train.py
+│   ├── predict.py
+│   └── requirements.txt
+└── README.md
+```
+
+### Formato CSV
+
+`task_id, fips_code, county, state, issue_time, target_time, predicted_x`
+
+- `task_id`: `"A"` o `"B"`
+- `fips_code`: stringa **5 cifre, zero-padded** (⚠️ mai aprire il CSV in Excel: distrugge gli zeri iniziali)
+- `issue_time` / `target_time`: ISO 8601 UTC con `Z` — es. `2025-09-01T00:00:00Z`
+- `predicted_x`: float in `[0, 1]`, **rapporto**, non conteggio grezzo
+
+---
+
+## 2. Decisioni chiave (già prese, da confermare)
+
+### 2.1 Schedule di emissione
+
+Horizon e risoluzione sono fissi: ogni batch deve contenere **l'insieme completo ed esatto** dei lead time. Batch parziali = non conformi.
+
+| Task | Issue times | Lead times | Righe/batch (5 contee) | N. batch |
+|---|---|---|---|---|
+| A | ogni giorno 00:00Z, dal **2025-08-30** al **2025-11-29** | +1h … +48h (48 step) | 240 | 92 |
+| B | ogni 6h (00/06/12/18Z), dal **2025-08-31T18:00Z** al **2025-11-30T18:00Z** | +15m … +6h (24 step) | 120 | 365 |
+
+Le prime emissioni partono **prima** del 1° settembre perché servono a coprire i `target_time` del primo giorno della finestra (le righe fuori finestra semplicemente non vengono valutate).
+
+**Totale righe ≈ 65.900** (21.840 per A + 43.800 per B). Volume trascurabile.
+
+⚠️ Target sovrapposti tra batch diversi sono **voluti** — non deduplicare. Lo scoring guarda l'accuratezza in funzione del lead time.
+
+### 2.2 Mapping issue_time → run meteo (il punto più delicato)
+
+ECMWF IFS HRES gira 4×/giorno (00/06/12/18Z) ma i dati non sono disponibili *all'istante* del run: la disseminazione richiede ~5–7 ore. Usare il run `T` all'issue time `T` sarebbe leakage mascherato.
+
+**Regola adottata (conservativa e difendibile):**
+
+- **Task A**, issue `D 00:00Z` → run **`D-1 12:00Z`** (lead +12h … +60h)
+- **Task B**, issue `T` → run **`T − 6h`** (lead +6h15m … +12h)
+
+Questa scelta va scritta esplicitamente nel report: è il tipo di dettaglio che distingue una pipeline realistica da una che bara.
+
+Run distinti necessari: ~4/giorno × 94 giorni ≈ **376 chiamate API**. Costo trascurabile.
+
+### 2.3 API meteo — parametri verificati
+
+```
+https://single-runs-api.open-meteo.com/v1/forecast
+  ?latitude=<lat1,lat2,...>&longitude=<lon1,lon2,...>
+  &run=2025-09-01T00:00
+  &models=ecmwf_ifs
+  &hourly=<variabili>
+```
+
+- `models=ecmwf_ifs` → IFS HRES, **9 km**, orizzonte 10 giorni, archivio **dal 14 marzo 2024**
+- Coordinate multiple comma-separated supportate → 5 contee in **una** chiamata (da smoke-testare sull'endpoint single-runs)
+- ⚠️ **IFS non ha `minutely_15` nativo** (solo HRRR / ICON-D2 / AROME, che però hanno archivio Single Runs solo dal 2 aprile 2026 → inutilizzabili). Quindi per il Task B il meteo a 15 minuti è **interpolato dall'orario**.
+
+**Implicazione modellistica centrale:** nel Task B il segnale genuino a 15 minuti **non arriva dal meteo** — arriva dallo **stato autoregressivo dell'outage** osservato fino a `issue_time`. Il meteo dà la busta di rischio, l'autoregressivo dà il timing. Progettare le feature di conseguenza.
+
+### 2.4 Causalità: cosa è lecito usare
+
+Le guidelines vincolano **solo l'input meteo** (§3.3). Lo storico degli outage osservati **fino a `issue_time` incluso** è legittimo e realistico (EAGLE-I/ODIN è near-real-time) — ed è la principale fonte di skill del Task B.
+
+Regola ferrea nel codice: ogni feature deve essere funzione esclusiva di dati con timestamp `≤ issue_time`. Un solo assert centralizzato che lo verifica, non controlli sparsi.
+
+### 2.5 Dati di training
+
+**Scelta primaria: allenare direttamente su feature IFS Single Runs, 2024-03-14 → 2025-08-31, su ~150 contee.**
+
+Motivazione: elimina completamente il mismatch train/test (allenare su ERA5 e predire da forecast è una distribution shift seria). ~17,5 mesi coprono le stagioni uragani 2024 (Beryl, Helene, Milton) e parte 2025 — eventi estremi in abbondanza.
+
+Allenare su **molte più contee delle 5 target** è la mossa che dà volume di eventi positivi e generalizzazione. Le 5 contee di consegna sono un sottoinsieme.
+
+*Fallback / ablation:* pretraining su ERA5 (Historical Weather API, nessun vincolo di modello per il training) 2019–2025 e fine-tuning su IFS. Da fare **solo se avanza tempo** — è un buon paragrafo di ablation, non un requisito.
+
+### 2.6 Selezione delle 5 contee
+
+⚠️ **Trappola di leakage metodologico:** scegliere le contee guardando cosa è successo a settembre–novembre 2025 è look-ahead bias. La selezione va fatta **solo su climatologia 2014–2024**.
+
+Criteri:
+1. Densità storica di eventi outage nella finestra stagionale set–nov (da EAGLE-I 2014–2024)
+2. Copertura EAGLE-I continua e affidabile (poche lacune)
+3. Diversità di regime meteo: costa atlantica/golfo (uragani), nord-est (nor'easter), interno (temporali convettivi)
+4. `total_customers` non troppo piccolo (contee minuscole → `x` rumorosissimo)
+
+Da documentare nella §2 del report con i numeri a supporto.
+
+### 2.7 Denominatore `total_customers`
+
+Le guidelines dicono che il valore di riferimento è **fissato e mantenuto dagli organizzatori** — noi non lo conosciamo. Usiamo `MCC.csv` (max customer count per contea) che accompagna il rilascio EAGLE-I, e **lo dichiariamo esplicitamente nel report**. È il rischio residuo più concreto sul punteggio ed è fuori dal nostro controllo.
+
+---
+
+## 3. Architettura del modello
+
+### 3.1 Il problema statistico
+
+`x` è un rapporto in `[0,1]`, **zero-inflated all'estremo** (la stragrande maggioranza dei quarti d'ora, in quasi tutte le contee, vale 0) e con coda pesante. Questo è *il* problema del task, ed è esattamente ciò che le guidelines chiedono di affrontare nella sezione "class-imbalance handling".
+
+### 3.2 Modello primario: LightGBM con obiettivo Tweedie
+
+`objective='tweedie'`, `tweedie_variance_power ≈ 1.3–1.7` (da tunare). Gestisce nativamente un target continuo, non negativo, con massa di probabilità in zero. Un solo modello, niente ricomposizione di pezzi.
+
+### 3.3 Modello alternativo: hurdle a due stadi
+
+- Classificatore: `P(x > τ)` con `τ ≈ 0.001`
+- Regressore condizionale: `E[log x | x > τ]`
+- Predizione: `P × exp(E[·])`
+
+Serve a due scopi: è il confronto principale dell'**ablation analysis** ed è la rete di sicurezza se il Tweedie si comporta male.
+
+### 3.4 Un modello per task
+
+Modelli separati per A e B, ciascuno con **`lead_time` come feature esplicita** (un solo modello copre tutti i lead time del suo task). Le feature disponibili differiscono troppo tra i due task per giustificare un modello unico.
+
+### 3.5 Feature
+
+**Meteo (dal forecast IFS al lead time corretto)**
+- `wind_gusts_10m`, `wind_speed_10m`, `wind_direction_10m`
+- `precipitation`, `snowfall`, `rain`
+- `temperature_2m`, `dew_point_2m`, `surface_pressure`
+- `cape`, `cloud_cover`, `freezing_level_height`
+
+**Derivate meteo — qui sta il valore aggiunto**
+- `gust³` (l'energia del vento ∝ v³, il danno alle linee scala similmente)
+- Massimo rolling delle raffiche su finestre ±3h, ±6h, ±12h attorno al target
+- Precipitazione cumulata 6h / 24h fino al target
+- **Superamento di quantili climatologici per-contea**: `gust > p95`, `> p99`, `> p99.9` della climatologia locale. È la feature che rende il modello sensibile all'*anomalia* invece che al valore assoluto — fondamentale per generalizzare tra contee costiere e interne.
+- Combinazione vento×pioggia (terreno saturo + raffiche = alberi che cadono)
+- Gradienti temporali: variazione di pressione, salto di raffica
+
+**Temporali**
+- `lead_time` (in ore/step)
+- ora del giorno e giorno dell'anno, encoding sin/cos
+
+**Statiche di contea**
+- FIPS come categorica
+- `total_customers`, densità di clienti
+- Quantili climatologici di raffica/pioggia della contea
+
+**Autoregressive (solo dati ≤ `issue_time`)** — *decisive per il Task B*
+- `x` all'issue time, e a −15m, −30m, −1h, −2h, −6h
+- Trend e derivata prima recente
+- Flag "outage in corso", durata dell'outage corrente
+- Massimo di `x` nelle ultime 24h
+
+### 3.6 Gestione dello sbilanciamento
+
+1. **Sottocampionamento dei negativi** con pesi correttivi: tenere tutte le righe con attività di outage nella contea ±24h, campionare al ~5% i periodi tranquilli, riassegnare `sample_weight = 1/p` per non distorcere la calibrazione.
+2. Obiettivo Tweedie (già intrinsecamente adatto).
+3. Valutazione **stratificata per regime**: le metriche globali sono dominate dagli zeri e non dicono nulla. Riportare sempre anche il sottoinsieme `x_true > 0`.
+
+### 3.7 Validazione
+
+**Split temporale, mai casuale.**
+- Train: 2024-03-14 → 2025-05-31
+- Validation: 2025-06-01 → 2025-08-31 (pre-finestra di test, include l'inizio della stagione uragani)
+
+La validazione deve **simulare esattamente la rolling issuance** del test: stessi issue_time, stessa regola di mapping run→issue, stessi lead time. Un backtest che non replica la procedura di consegna non misura nulla di utile.
+
+### 3.8 Metriche
+
+⚠️ **Le guidelines non specificano la metrica di scoring.** Non essendoci un target ufficiale da ottimizzare, riportiamo una suite e lo dichiariamo nel report:
+
+- MAE e RMSE su tutte le righe valutate
+- MAE ristretto a `x_true > 0.001` (il regime che conta davvero)
+- POD / FAR / CSI a soglie multiple; Brier score per `P(x > τ)`
+- **Skill in funzione del lead time** — le guidelines dicono esplicitamente che lo scoring esaminerà l'accuratezza per lead time, quindi la curva va nel report
+- Diagramma di affidabilità (calibrazione)
+
+**Baseline obbligatorie per il confronto:** predittore costante zero, climatologia per-contea, persistenza. Se il modello non batte la persistenza sul Task B a lead brevi, c'è un bug.
+
+---
+
+## 4. Piano giorno per giorno
+
+### Giorno 1 — giovedì 20 agosto: *de-riskare tutto ciò che è esterno*
+
+Priorità assoluta: nessuna riga di modello finché non è certo che i dati arrivino.
+
+- [ ] **Smoke test Single Runs API**: una chiamata con `run=2025-09-15T00:00`, `models=ecmwf_ifs`, 5 coordinate comma-separated. Verificare che il multi-coordinate funzioni su *quell'* endpoint e che le variabili richieste esistano tutte.
+- [ ] Verificare copertura archivio sull'**intera** finestra (spot check: marzo 2024, gennaio 2025, novembre 2025)
+- [ ] Misurare i rate limit reali con una raffica controllata
+- [ ] Scaricare **EAGLE-I 2025** + anni storici (2014–2024) e `MCC.csv` da OSTI / ORNL Constellation
+- [ ] Ispezionare il formato reale: colonne, timezone dei timestamp, se le righe a zero sono assenti (quasi certamente sì → serve reindicizzazione su griglia 15-min completa con fill a zero)
+- [ ] **Selezionare le 5 contee** su climatologia 2014–2024, con i numeri a supporto
+- [ ] Scrivere `data_acquisition/` con **caching su disco** (parquet). Ogni chiamata API fatta una sola volta nella vita del progetto.
+
+**Gate di fine giornata:** se l'archivio IFS ha buchi sulla finestra di test, il piano cambia radicalmente. Va saputo il 20, non il 23.
+
+### Giorno 2 — venerdì 21 agosto: *dati e feature*
+
+- [ ] Scaricare i run IFS per il training (~150 contee, 2024-03-14 → 2025-08-31, run 00Z e 12Z)
+- [ ] Scaricare i 376 run per la finestra di test
+- [ ] Costruire la griglia target EAGLE-I: reindicizzazione 15-min, fill zero, calcolo di `x`
+- [ ] Allineamento temporale run→lead→target (il punto dove si annidano i bug: scrivere test unitari su questo)
+- [ ] Pipeline feature completa, con l'assert centralizzato di causalità
+- [ ] **Baseline funzionante entro sera**: persistenza + climatologia, valutate sullo split di validation
+
+**Gate:** una baseline end-to-end che produce un CSV valido. Da qui in poi si ha sempre qualcosa da consegnare.
+
+### Giorno 3 — sabato 22 agosto: *modelli*
+
+- [ ] LightGBM Tweedie, Task A e Task B
+- [ ] Modello hurdle come confronto
+- [ ] Tuning contenuto (poche run, non una grid search: il tempo è la risorsa scarsa)
+- [ ] **Ablation** — servono per il report, quindi loggare tutto in modo strutturato:
+  - senza feature autoregressive
+  - senza quantili climatologici
+  - senza feature derivate dalle raffiche
+  - Tweedie vs hurdle
+  - meno contee di training
+- [ ] Curve di skill vs lead time, calibrazione
+
+**Gate:** modello che batte le baseline in modo documentato.
+
+### Giorno 4 — domenica 23 agosto: *generazione, validazione, scrittura*
+
+- [ ] Generare tutti i 457 batch → `predictions.csv` (~65.900 righe)
+- [ ] **Validatore CSV** automatico (vedi §6) — deve passare al 100%
+- [ ] Scrivere il report (3–8 pagine)
+- [ ] Scrivere `README.md` con setup ambiente, ordine di esecuzione, tempi attesi per step
+- [ ] `requirements.txt` con versioni pinnate
+- [ ] **Prova di riproducibilità da zero**: clonare in una cartella pulita, seguire il README alla lettera, verificare che esca lo stesso CSV
+
+**Gate:** pacchetto completo e consegnabile la sera del 23.
+
+### Giorno 5 — lunedì 24 agosto: *buffer e consegna*
+
+- [ ] Rilettura del report, controllo che ogni sezione richiesta ci sia
+- [ ] Checklist di conformità §6
+- [ ] **Consegnare entro il pomeriggio**, non alle 23:58
+
+---
+
+## 5. Rischi
+
+| Rischio | Impatto | Mitigazione |
+|---|---|---|
+| Archivio IFS con buchi sulla finestra | **Bloccante** | Verificare il giorno 1. Fallback: run più vecchio disponibile + flag "stale forecast" come feature |
+| Multi-coordinate non supportato su single-runs | Basso | 5× chiamate, comunque trascurabile |
+| Rate limit più stretti del previsto | Medio | Caching aggressivo, download notturno in background |
+| `total_customers` diverso da quello degli organizzatori | Medio, **fuori controllo** | Usare MCC.csv, dichiararlo nel report |
+| EAGLE-I con lacune di copertura sulle contee scelte | Medio | Criterio di selezione contee include la continuità della copertura |
+| Metrica di scoring ignota | Medio | Suite di metriche, non over-fittare su una sola |
+| Tempo insufficiente per il modello "bello" | Alto (5 giorni) | Baseline consegnabile già il giorno 2; ogni giorno successivo migliora qualcosa di già valido |
+
+**Principio guida:** avere sempre un pacchetto consegnabile. Meglio un LightGBM onesto, documentato e riproducibile che un'architettura ambiziosa incompleta il 24 sera.
+
+---
+
+## 6. Checklist di conformità pre-consegna
+
+CSV:
+- [ ] `fips_code` stringa a 5 cifre con zeri iniziali preservati (verificare aprendo il file come testo, **mai** con Excel)
+- [ ] Tutti i timestamp ISO 8601 UTC con suffisso `Z`
+- [ ] Task A: esattamente 48 righe per (issue_time, contea); Task B: esattamente 24
+- [ ] Tutti i batch contengono **tutte e 5** le contee
+- [ ] Frequenza minima rispettata: ≥1 batch/giorno per A, ≥1 batch/6h per B
+- [ ] `predicted_x` ∈ [0,1], nessun NaN, nessuna notazione scientifica illeggibile
+- [ ] Nessuna deduplicazione dei target sovrapposti
+- [ ] Copertura completa della finestra 2025-09-01 → 2025-11-30
+
+Report:
+- [ ] 3–8 pagine, PDF
+- [ ] Acquisizione e preprocessing: scelta fonti, valori mancanti, allineamento timestamp, matching spaziale
+- [ ] Feature engineering e razionale
+- [ ] Architettura del modello e strategia di training
+- [ ] **Gestione dello sbilanciamento** (sezione esplicitamente richiesta)
+- [ ] Risultati sperimentali e **ablation**
+- [ ] **Dichiarazione di ogni fonte dati e relativa licenza** — EAGLE-I, Open-Meteo, ed eventuali altre. Le guidelines dicono testualmente che le omissioni non sono accettabili.
+- [ ] Giustificazione della scelta delle 5 contee
+
+Codice:
+- [ ] Pipeline completa: acquisizione → preprocessing → feature → training → predizione
+- [ ] `requirements.txt` con versioni pinnate
+- [ ] README con configurazione ambiente, ordine di esecuzione, tempi attesi
+- [ ] Testato da zero in ambiente pulito
+
+---
+
+## 7. Fonti dati e licenze (bozza per il report)
+
+| Fonte | Uso | URL | Licenza — **da verificare** |
+|---|---|---|---|
+| EAGLE-I Power Outage Data 2014–2025 (ORNL) | Ground truth | https://www.osti.gov/biblio/3012826 | DOI 10.13139/ORNLNCCS/3012826 |
+| Open-Meteo Single Runs API (ECMWF IFS HRES) | Feature meteo previsionali | https://open-meteo.com/en/docs/single-runs-api | CC BY 4.0 (Open-Meteo); dati ECMWF sotto licenza propria |
+| Open-Meteo Historical Weather API (ERA5) | *Opzionale*, pretraining | https://open-meteo.com/en/docs/historical-weather-api | CC BY 4.0 |
+
+⚠️ Le licenze vanno **verificate alla fonte e citate testualmente**, non assunte. È un requisito esplicito.
+
+---
+
+## 8. Fuori scope in Phase 1 (non lavorarci)
+
+- Topologie di alimentazione AIDC (UPS 2N, UPS DR, HVDC 2N, Direct Utility 2N)
+- Trasformazione sigmoidale con parametri `k`, `x0` dipendenti dalla topologia di alimentazione
+- Critical-load coverage ratio e backup duration
+- Dataset NaFIRS (UK)
+
+Tutto questo torna in **Phase 2**, quando gli organizzatori pubblicheranno il dataset delle topologie e il design di scoring relativo.

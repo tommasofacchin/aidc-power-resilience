@@ -1,0 +1,17 @@
+# Le versioni vanno CONGELATE con `pip freeze` prima della consegna:
+# le submission guidelines richiedono esplicitamente versioni pinnate.
+# Finché la pipeline è in sviluppo si lavora con i vincoli minimi qui sotto.
+
+pandas
+numpy
+pyarrow
+requests
+requests-cache
+lightgbm
+scikit-learn
+scipy
+pyyaml
+tqdm
+
+# Analisi e grafici per il report
+matplotlib

@@ -1,0 +1,34 @@
+# --- Dati grezzi e cache ---------------------------------------------------
+# I file EAGLE-I annuali e le cache meteo sono grossi e ricostruibili
+# dagli script in code/data_acquisition/. Mai versionarli.
+data/*
+!data/.gitkeep
+outputs/
+*.parquet
+*.feather
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Segreti ---------------------------------------------------------------
+.env
+*.key
+secrets.*
+
+# --- Sistema ---------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Editor ----------------------------------------------------------------
+.vscode/
+.idea/
