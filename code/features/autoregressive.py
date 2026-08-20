@@ -70,11 +70,11 @@ if __name__ == "__main__":
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from data_acquisition.eagle_i import load_max_customer_counts, load_outage_events
+    from data_acquisition.eagle_i import load_total_customers, load_outage_events
     from preprocessing.build_target_grid import build_dense_grid
 
     events = load_outage_events(years=[2025])
-    mcc = load_max_customer_counts()
+    mcc = load_total_customers()
 
     # Quick correctness check on the 5 reporting counties, restricted to a short window
     # so it runs fast — the full training table will call this on the whole grid.

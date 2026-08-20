@@ -6,14 +6,16 @@ Split is temporal, never random (PLAN.md section 3.7) — a random split would l
 adjacent-in-time rows (the same storm, 15 minutes apart) across train/val and make
 validation numbers meaningless.
 
-NOTE — this script currently trains on data/processed/training_table_partial.parquet,
-built while the background IFS weather download (code/data_acquisition/
-bulk_download_training_weather.py) is still in progress. It exists at this stage to
-prove the training loop is correct end-to-end; the temporal split below is
-illustrative until the full Jan-Aug 2025 table is available, at which point VAL_START
-should be reviewed against the actual date range (see PLAN.md section 3.7, itself
-already revised from the original 2024-2025 multi-year plan down to the single
-2025 Jan-Aug window forced by EAGLE-I access constraints).
+VAL_START was reviewed against the real table on 20 Aug 2026, as the NOTE that used to
+sit here said it should be. It had been 2025-07-01, chosen when the plan still expected
+runs through August; the IFS download actually stopped at 2025-06-14 against the
+Open-Meteo daily quota, so nothing in the table ever reached that cutoff, the validation
+split came out empty every time, and the fallback below quietly substituted a RANDOM
+80/20 split — precisely the leaky split the paragraph above rules out. Every validation
+number produced before that date came from the leaky path and must not be reported.
+2025-05-01 puts the boundary inside the data: ~80/20 by rows, with 32.7% positive rows
+in validation against 28.4% overall, so the held-out period is not an unrepresentatively
+calm stretch. Re-check this if the table's span changes again.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from data_acquisition.eagle_i import PROCESSED_DIR
 from model_bundle import save_bundle
 
-VAL_START = pd.Timestamp("2025-07-01")  # see NOTE above — revisit once the full table exists
+VAL_START = pd.Timestamp("2025-05-01")  # see NOTE above — must stay inside the table's span
 BUNDLE_DIR = PROCESSED_DIR / "model_bundle"
 
 NON_FEATURE_COLS = {"issue_time", "target_time", "target_x"}
@@ -79,24 +81,39 @@ def main():
     train_df, val_df = temporal_split(df, VAL_START)
     print(f"Train: {len(train_df)} rows, Val: {len(val_df)} rows")
     if len(val_df) == 0:
-        print("WARNING: empty validation set — table doesn't yet span VAL_START. "
-              "This run only proves the training loop works, not real generalization.")
-        val_df = train_df.sample(frac=0.2, random_state=42)
-        train_df = train_df.drop(val_df.index)
-        print(f"  Falling back to a random 80/20 split for this smoke test: "
-              f"train={len(train_df)}, val={len(val_df)}")
+        # Deliberately fatal. This used to fall back to a random 80/20 split with a
+        # printed warning, and that is how leaky validation numbers got produced and
+        # believed for a whole day: the warning scrolled past, the run exited 0, and a
+        # model bundle appeared on disk looking exactly like a good one. A split that
+        # violates the file's own stated rule is not a degraded result to warn about,
+        # it is a broken configuration to stop on.
+        raise ValueError(
+            f"Empty validation set: no row has issue_time >= VAL_START ({VAL_START.date()}), "
+            f"but the table spans {df['issue_time'].min()} .. {df['issue_time'].max()}. "
+            f"Move VAL_START inside that range — and note the climatology in "
+            f"build_training_table.py is fitted with the same cutoff, so the table must "
+            f"be rebuilt after changing it, not just retrained."
+        )
 
     feature_cols = [c for c in df.columns if c not in NON_FEATURE_COLS]
     X_train, y_train = train_df[feature_cols], train_df["target_x"]
     X_val, y_val = val_df[feature_cols], val_df["target_x"]
 
-    model = lgb.LGBMRegressor(**LGBM_PARAMS)
-    model.fit(
-        X_train, y_train,
-        categorical_feature=CATEGORICAL_COLS,
-        eval_X=X_val, eval_y=y_val,
-        callbacks=[lgb.early_stopping(30, verbose=False), lgb.log_evaluation(0)],
-    )
+    # No early stopping, and no eval_set. The previous version passed `eval_X=`/`eval_y=`
+    # — not parameters of LightGBM's sklearn fit(), which takes `eval_set`. They were
+    # swallowed as unknown booster params instead of registering a validation set, and
+    # the early_stopping callback then fired after 25 of the configured 500 trees. The
+    # deployed model was that 25-tree stump: RMSE 0.016447 against 0.016281 for the same
+    # params trained properly, and — the part that actually mattered — a maximum
+    # prediction of 0.0118 against 0.0861, i.e. it had almost no dynamic range and could
+    # never signal a severe outage.
+    #
+    # Fixed by removing early stopping rather than by repairing eval_set: stopping on the
+    # validation set and then reporting metrics on that same set would make every number
+    # in the report optimistic. With no early stopping the split stays a genuine holdout,
+    # and n_estimators is simply a hyperparameter like any other.
+    model = lgb.LGBMRegressor(**LGBM_PARAMS, verbose=-1)
+    model.fit(X_train, y_train, categorical_feature=CATEGORICAL_COLS)
 
     pred_val = np.clip(model.predict(X_val), 0, 1)
 

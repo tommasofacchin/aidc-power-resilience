@@ -28,7 +28,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from data_acquisition.eagle_i import PROCESSED_DIR, load_max_customer_counts, load_outage_events
+from data_acquisition.eagle_i import PROCESSED_DIR, load_total_customers, load_outage_events
 from features.autoregressive import add_autoregressive_features
 from features.weather_features import add_climatology_features, build_weather_base, fit_climatology
 from preprocessing.build_target_grid import build_dense_grid
@@ -52,7 +52,9 @@ def add_temporal_features(df: pd.DataFrame, time_col: str) -> pd.DataFrame:
 
 
 def build_training_table(
-    fips_codes: list[str], climatology_cutoff: pd.Timestamp | None = None
+    fips_codes: list[str],
+    climatology_cutoff: pd.Timestamp | None = None,
+    years: list[int] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Returns (training_table, fitted_climatology).
 
@@ -60,7 +62,12 @@ def build_training_table(
     reuse these exact thresholds — see code/model_bundle.py. `climatology_cutoff`
     should be the temporal-split boundary so the fit doesn't see validation data.
     """
-    base = build_weather_base()
+    # One `years` list drives BOTH the weather runs and the ground truth below, so the
+    # two can never drift apart. They did once: the run directory had started filling
+    # with 2024 files from a background download while ground truth was pinned to 2025,
+    # and the mismatched rows were dropped only *after* the climatology had already been
+    # fitted on them.
+    base = build_weather_base(years=years)
     base = base[base["fips_code"].isin(fips_codes)]
     climatology = fit_climatology(base, cutoff=climatology_cutoff)
     weather = add_climatology_features(base, climatology)
@@ -70,9 +77,9 @@ def build_training_table(
     # is tz-naive throughout.
     weather["target_time"] = weather["target_time"].dt.tz_localize(None)
 
-    events = load_outage_events(years=[2025])
+    events = load_outage_events(years=years)
     events = events[events["fips_code"].isin(fips_codes)]
-    mcc = load_max_customer_counts()
+    mcc = load_total_customers()
 
     grid_start = weather["issue_time"].min() - pd.Timedelta(hours=24)  # margin for 24h lookback
     grid_end = weather["target_time"].max()
@@ -133,14 +140,25 @@ def build_training_table(
 
 
 if __name__ == "__main__":
+    import argparse
+
     from train import VAL_START
+
+    parser = argparse.ArgumentParser(description="Build the training table.")
+    parser.add_argument("--years", type=int, nargs="+", default=[2025],
+                        help="years to use for BOTH weather runs and ground truth; "
+                             "add 2024 once the autumn runs have finished downloading")
+    args = parser.parse_args()
 
     training_counties = pd.read_csv(
         PROCESSED_DIR / "training_counties.csv", dtype={"fips_code": str}
     )
     fips_codes = training_counties["fips_code"].tolist()
 
-    table, climatology = build_training_table(fips_codes, climatology_cutoff=VAL_START)
+    print(f"Years: {args.years}")
+    table, climatology = build_training_table(
+        fips_codes, climatology_cutoff=VAL_START, years=args.years
+    )
     climatology.to_parquet(PROCESSED_DIR / "climatology.parquet")
     print(f"Fitted climatology on run_time < {VAL_START.date()} for "
           f"{len(climatology)} counties -> {PROCESSED_DIR / 'climatology.parquet'}")

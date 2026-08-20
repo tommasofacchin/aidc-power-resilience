@@ -20,7 +20,7 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from data_acquisition.eagle_i import PROCESSED_DIR, load_max_customer_counts, load_outage_events
+from data_acquisition.eagle_i import PROCESSED_DIR, load_total_customers, load_outage_events
 
 NATIVE_FREQ = "15min"
 
@@ -37,7 +37,7 @@ def build_dense_grid(
     Parameters
     ----------
     events : output of load_outage_events() — sparse rows with customers_out > 0.
-    mcc : output of load_max_customer_counts() — the total_customers denominator.
+    mcc : output of load_total_customers() — the total_customers denominator.
     fips_codes : restrict to this set of counties; defaults to every county present in
         `events` (i.e. every county that had at least one outage in the loaded years —
         NOT every US county, since counties with zero outages in the source years
@@ -95,7 +95,7 @@ def build_dense_grid(
 
 if __name__ == "__main__":
     events = load_outage_events(years=[2014])
-    mcc = load_max_customer_counts()
+    mcc = load_total_customers()
     print(f"MCC.csv columns: {list(mcc.columns)}")
 
     sample_fips = sorted(events["fips_code"].unique())[:3]

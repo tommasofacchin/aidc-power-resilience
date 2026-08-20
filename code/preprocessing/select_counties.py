@@ -28,7 +28,7 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from data_acquisition.eagle_i import PROCESSED_DIR, load_max_customer_counts, load_outage_events
+from data_acquisition.eagle_i import PROCESSED_DIR, load_total_customers, load_outage_events
 
 CLIMATOLOGY_START = pd.Timestamp("2025-01-01")
 CLIMATOLOGY_END = pd.Timestamp("2025-09-01")  # exclusive — stops before the test window
@@ -71,7 +71,7 @@ def compute_county_climatology() -> pd.DataFrame:
     events = events[
         (events["run_start_time"] >= CLIMATOLOGY_START) & (events["run_start_time"] < CLIMATOLOGY_END)
     ]
-    mcc = load_max_customer_counts()
+    mcc = load_total_customers()
     events = events.merge(mcc, on="fips_code", how="left")
     events["x"] = (events["customers_out"] / events["total_customers"]).clip(0, 1)
 

@@ -112,7 +112,11 @@ Regola ferrea nel codice: ogni feature deve essere funzione esclusiva di dati co
 
 ### 2.5 Dati di training — aggiornato dopo la ricognizione reale (19 agosto)
 
-⚠️ **Cambio rispetto alla versione precedente di questo piano.** L'assunzione di partenza era EAGLE-I multi-anno (2014–2024) via Globus per costruire climatologia e training set ampi. Verificato sul campo: **la cartella Globus fornita dagli organizzatori contiene solo l'annata 2025 e un campione 2014 (nov–dic, l'avvio storico del programma EAGLE-I)**. Gli anni 2015–2024 non sono raggiungibili da nessuna fonte scriptabile trovata (Opendatasoft mirror: verificato assente per tutti gli 11 anni; figshare: solo 2014). Aggiorniamo la strategia di conseguenza invece di bloccarci.
+⚠️ **Rettifica del 20 agosto — la versione precedente di questo paragrafo era sbagliata.** Diceva che gli anni 2015–2024 non fossero raggiungibili da nessuna fonte scriptabile ("figshare: solo 2014"). Falso: la ricognizione originale aveva enumerato solo i file id visibili sulla pagina dello share token, senza mai risolvere il token all'articolo sottostante. **L'intero archivio 2014–2025 sta su figshare, articolo 24237376 v4, CC BY 4.0 — 17 file, ~11,6 GB, ogni annata scaricabile con un GET anonimo su `https://ndownloader.figshare.com/files/<id>`, senza login né Globus.** La tabella completa degli id è in `code/data_acquisition/eagle_i.py` (`FIGSHARE_YEAR_FILES`), rigenerabile con `curl -s https://api.figshare.com/v2/articles/24237376`. Il link Globus indicato dagli organizzatori (DOI 10.13139/ORNLNCCS/1975202) copre solo 2014–2022: sottoinsieme stretto, mai conveniente.
+
+**Ma il vincolo che stringe davvero non era EAGLE-I.** Come spiegato subito sotto, l'archivio IFS Single Runs parte dal 14 marzo 2024, e il budget giornaliero Open-Meteo è la risorsa scarsa. Quindi la disponibilità ritrovata **non riapre** il training multi-anno: gli anni ≤ 2023 restano privi di feature IFS. Quello che sblocca concretamente è (a) il **2024 dal 14 marzo in poi**, unico anno aggiuntivo compatibile con IFS, se e solo se avanza quota Open-Meteo, e (b) la **climatologia per contea su tutti e 12 gli anni**, che non consuma nemmeno una chiamata meteo. Entrambi restano opzionali rispetto alla deadline.
+
+⚠️ **Trappola di ingest verificata sui dodici header reali:** i file annuali **non hanno schema stabile**, e la deriva è silenziosa, non fatale. 2014–2022 e 2025 usano `fips_code,county,state,customers_out,run_start_time`; il **2023 chiama `sum` la quarta colonna** invece di `customers_out`; il **2024 porta una sesta colonna `total_customers`**. Un `pd.concat` ingenuo produce quindi un `customers_out` interamente NaN per tutto il 2023, senza sollevare nulla. `load_outage_events()` ora normalizza gli header prima di concatenare e **solleva** su un rinomino sconosciuto invece di degradare in NaN.
 
 **Vincolo aggiuntivo che restringe ulteriormente la finestra utile:** l'archivio ECMWF IFS Single Runs parte dal **14 marzo 2024**. Il campione EAGLE-I 2014 è quindi **inutilizzabile per il training basato su IFS** (non c'è sovrapposizione: EAGLE-I 2014 esiste, IFS 2014 no). L'unica finestra con **sia** ground truth **sia** feature IFS disponibili è:
 
@@ -130,7 +134,7 @@ Con 204 run di training ancora mancanti + 367 di generazione = 571 chiamate cont
 
 Compromesso onesto da scrivere nel report: il training finale userà ~120 run invece dei ~244 originariamente pianificati (già ridotti da un'idea iniziale multi-anno). È un dataset di training via via più piccolo a ogni vincolo scoperto — ma ogni riduzione è stata verificata sul campo, documentata, e il campionamento è sempre rimasto stratificato/uniforme, mai un troncamento cronologico che avrebbe distorto la copertura stagionale.
 
-*Se emergono altri anni EAGLE-I* (es. l'utente trova un altro DOI/collezione Globus per 2015–2024): reintegrarli è un miglioramento diretto della diversità stagionale, non richiede altro che ripetere l'ingest — vedi `code/data_acquisition/eagle_i.py`, che li individua automaticamente da `data/raw/eaglei_outages_<anno>.csv`.
+*Reintegrare altri anni EAGLE-I* non richiede più di trovare una fonte: `python -m data_acquisition.eagle_i <anni>` li scarica da figshare e `load_outage_events()` li raccoglie da `data/raw/eaglei_outages_<anno>.csv`. Il costo non è l'ingest ma il meteo abbinato — vale la pena solo per il 2024 post-14-marzo, o per la climatologia, che di meteo non ne consuma.
 
 ### 2.6 Selezione delle 5 contee — aggiornato
 
@@ -252,7 +256,7 @@ Priorità assoluta: nessuna riga di modello finché non è certo che i dati arri
 - [ ] **Smoke test Single Runs API**: una chiamata con `run=2025-09-15T00:00`, `models=ecmwf_ifs`, 5 coordinate comma-separated. Verificare che il multi-coordinate funzioni su *quell'* endpoint e che le variabili richieste esistano tutte.
 - [ ] Verificare copertura archivio sull'**intera** finestra (spot check: marzo 2024, gennaio 2025, novembre 2025)
 - [ ] Misurare i rate limit reali con una raffica controllata
-- [ ] Scaricare **EAGLE-I 2025** + anni storici (2014–2024) e `MCC.csv` da OSTI / ORNL Constellation
+- [x] Scaricare **EAGLE-I 2025** e `MCC.csv` (figshare, anonimo). Anni storici 2014–2024 disponibili on demand: `python -m data_acquisition.eagle_i <anni>`
 - [ ] Ispezionare il formato reale: colonne, timezone dei timestamp, se le righe a zero sono assenti (quasi certamente sì → serve reindicizzazione su griglia 15-min completa con fill a zero)
 - [ ] **Selezionare le 5 contee** su climatologia 2014–2024, con i numeri a supporto
 - [ ] Scrivere `data_acquisition/` con **caching su disco** (parquet). Ogni chiamata API fatta una sola volta nella vita del progetto.

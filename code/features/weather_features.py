@@ -27,11 +27,28 @@ PRESSURE_COL = "surface_pressure"
 CLIMATOLOGY_QUANTILES = {"p95": 0.95, "p99": 0.99, "p999": 0.999}
 
 
-def load_weather_runs(run_dir: Path = WEATHER_RUNS_DIR) -> pd.DataFrame:
-    """Concatenate every downloaded run's long-format parquet into one DataFrame."""
+def load_weather_runs(
+    run_dir: Path = WEATHER_RUNS_DIR, years: list[int] | None = None
+) -> pd.DataFrame:
+    """Concatenate downloaded runs' long-format parquets into one DataFrame.
+
+    `years` restricts which run files are read, and callers should pass it rather than
+    relying on the glob. The directory accumulates runs from more than one year — a
+    background download can be depositing another year's files into it right now — and
+    a caller that has ground truth for only some of those years must not silently pick
+    up the rest: rows without a target get dropped later and look harmless, but the
+    climatology is fitted before that drop, so foreign runs shift the quantiles that
+    every threshold feature is measured against.
+    """
     paths = sorted(run_dir.glob("run_*.parquet"))
+    if years is not None:
+        wanted = {str(y) for y in years}
+        paths = [p for p in paths if p.name[len("run_"):len("run_") + 4] in wanted]
     if not paths:
-        raise FileNotFoundError(f"No weather run files found in {run_dir}")
+        raise FileNotFoundError(
+            f"No weather run files found in {run_dir}"
+            + (f" for years {years}" if years is not None else "")
+        )
     return pd.concat((pd.read_parquet(p) for p in paths), ignore_index=True)
 
 
@@ -177,10 +194,12 @@ def interpolate_to_15min(wide: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(parts, ignore_index=True)
 
 
-def build_weather_base(run_dir: Path = WEATHER_RUNS_DIR) -> pd.DataFrame:
+def build_weather_base(
+    run_dir: Path = WEATHER_RUNS_DIR, years: list[int] | None = None
+) -> pd.DataFrame:
     """Everything except climatology, which needs a separate fit/apply step so the
     training-fitted thresholds can be reused at prediction time."""
-    long_df = load_weather_runs(run_dir)
+    long_df = load_weather_runs(run_dir, years=years)
     wide = pivot_weather(long_df)
     return add_derived_weather_features(wide)
 

@@ -1,0 +1,856 @@
+<title>County-Level Outage Ratio Forecasting</title>
+<style>
+  @page { size: A4; margin: 15mm 16mm 14mm 16mm; }
+
+  :root {
+    --ink: #16181d;
+    --ink-soft: #4a4f57;
+    --ink-faint: #767b83;
+    --rule: #ccd0d6;
+    --rule-soft: #e4e7ea;
+    --accent: #1f3d63;
+  }
+
+  html { font-size: 10pt; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    color: var(--ink);
+    line-height: 1.40;
+    background: #fff;
+    hyphens: auto;
+  }
+
+  h1 {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    font-size: 17.5pt;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    margin: 0 0 2mm;
+    color: var(--accent);
+  }
+  .subtitle {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    font-size: 10.5pt;
+    color: var(--ink-soft);
+    margin: 0 0 1mm;
+  }
+  .meta {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    font-size: 8.8pt;
+    color: var(--ink-faint);
+    border-top: 0.6pt solid var(--rule);
+    padding-top: 2mm;
+    margin: 3mm 0 4.5mm;
+  }
+  .meta span { margin-right: 6mm; }
+
+  h2 {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    font-size: 11.5pt;
+    color: var(--accent);
+    margin: 5mm 0 1.8mm;
+    break-after: avoid;
+  }
+  h3 {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    font-size: 9.8pt;
+    color: var(--ink);
+    margin: 3.4mm 0 1.2mm;
+    break-after: avoid;
+  }
+  p { margin: 0 0 2mm; text-align: justify; }
+  ul { margin: 0 0 2.8mm; padding-left: 5mm; }
+  li { margin-bottom: 1.1mm; }
+
+  code, .mono {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 8.9pt;
+    color: #29303a;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    font-size: 8.4pt;
+    margin: 2.5mm 0 3.5mm;
+  }
+  /* Tables may run over a page boundary rather than jumping whole to the next page,
+     which was costing a third of a page each time. Rows and captions stay intact. */
+  tr { break-inside: avoid; }
+  thead { break-after: avoid; }
+  caption {
+    caption-side: top;
+    text-align: left;
+    font-size: 8.4pt;
+    color: var(--ink-soft);
+    padding-bottom: 1.4mm;
+    break-after: avoid;
+  }
+  th {
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 0.9pt solid var(--ink-soft);
+    padding: 1.1mm 2mm 1.1mm 0;
+    vertical-align: bottom;
+  }
+  td {
+    padding: 1.05mm 2mm 1.05mm 0;
+    border-bottom: 0.4pt solid var(--rule-soft);
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: 0.9pt solid var(--ink-soft); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; padding-right: 3mm; }
+  .best { font-weight: 600; }
+  .rowgroup td { padding-top: 2.2mm; }
+
+  figure { margin: 2.5mm 0 3mm; break-inside: avoid; }
+  figure img { width: 93%; display: block; margin: 0 auto; }
+  figcaption {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    font-size: 8pt;
+    color: var(--ink-soft);
+    margin-top: 1.4mm;
+    line-height: 1.4;
+  }
+
+  .callout {
+    border-left: 2pt solid var(--rule);
+    padding: 0.5mm 0 0.5mm 3.5mm;
+    margin: 3mm 0;
+    color: var(--ink-soft);
+    font-size: 9.3pt;
+  }
+  .callout p { margin-bottom: 1.5mm; }
+  .callout p:last-child { margin-bottom: 0; }
+
+  .footnote {
+    font-size: 8.6pt;
+    color: var(--ink-soft);
+    border-top: 0.6pt solid var(--rule);
+    padding-top: 2mm;
+    margin-top: 4mm;
+  }
+</style>
+
+<h1>Forecasting county-level power outage ratios from archived ECMWF forecasts</h1>
+<p class="subtitle">Huawei Tech Arena 2026 &mdash; Topic 2, AIDC Power-Supply Risk Forecasting, Phase 1</p>
+<p class="meta">
+  <span><strong>Author:</strong> Tommaso Facchin (solo entry)</span>
+  <span><strong>Tasks:</strong> A (48 h / 1 h) and B (6 h / 15 min)</span>
+  <span><strong>Test window:</strong> 1 Sep &ndash; 30 Nov 2025</span>
+  <span><strong>Date:</strong> 21 August 2026</span>
+</p>
+
+<h2>1. What we built, and what came out of it</h2>
+
+<p>
+The system predicts <code>x = customers_out / total_customers</code> for five US counties, at
+every lead time both tasks require, from archived ECMWF IFS HRES forecast runs plus the
+observed EAGLE-I outage history available at each issue time. It is a single LightGBM
+regressor with a Tweedie objective, one model covering both tasks, with lead time as an
+explicit feature, blended toward a persistence forecast at short lead times where
+persistence measurably wins. The submitted file contains 65,880 rows: 92 daily Task A
+batches and 365 six-hourly Task B batches, five counties each, generated from 93 distinct
+archived forecast runs.
+</p>
+
+<p>
+The honest headline is that skill on this target is real but thin. Against an always-zero forecast, which is a strong baseline
+when 71.6&nbsp;% of the target values are exactly zero, the model reduces held-out RMSE by 3.1&nbsp;% and reduces MAE by 8.7&nbsp;% on the rows that
+actually contain an outage. Most of that skill lives at short lead times and decays with
+horizon, which is what we would expect and what the lead-time curve in Section&nbsp;7 shows.
+Two things dominate the model: which county the row belongs to, and the recent observed
+outage state. Weather contributes, but less than we assumed at the start of the week.
+We think the main reason is the size of the training set we were able to assemble, and
+Section&nbsp;8 explains why it ended up as small as it did.
+</p>
+
+<h2>2. Choosing the five counties</h2>
+
+<p>
+The guidelines let each team pick its own five counties and ask for the choice to be
+justified. Our first instinct &mdash; rank all ~3,050 EAGLE-I counties by how often they report
+an outage and take the top five &mdash; is a trap, and it is worth describing because the trap is
+invisible in the output. Ranking by the fraction of 15-minute intervals with any nonzero
+<code>customers_out</code> returns Harris County TX, Miami-Dade, and their peers at rates of
+99.9&nbsp;%. Those counties are not unusually fragile. They are unusually large, and in a county
+with three million customers there is essentially always somebody off supply somewhere.
+What that ranking recovers is population, not weather risk.
+</p>
+
+<p>
+So we ranked instead on the fraction of intervals with <code>x</code> above 1&nbsp;%, which requires an
+event large enough to be visible at county scale. On top of that we required continuous
+EAGLE-I coverage across the window (a reporting gap and a quiet county look identical in a
+sparse event log), a denominator above 5,000 customers so that <code>x</code> is not dominated by
+single-household noise, and diversity of weather regime across the final five rather than
+five variations of the same climate.
+</p>
+
+<p>
+The activity statistics come from January&ndash;August 2025 only, not the multi-year climatology
+we wanted: the forecast archive that supplies our features starts in March 2024 and the API
+budget did not stretch back further. That window at least stops before the evaluated one
+opens, so the selection never looks at a month it will be scored on.
+</p>
+
+<table>
+  <caption>Table 1 &mdash; The five reporting counties. Activity statistics cover 1 Jan &ndash; 31 Aug 2025 at
+  15-minute resolution, 23,328 intervals per county. &ldquo;Significant&rdquo; means <code>x &gt; 0.01</code>.</caption>
+  <thead>
+    <tr>
+      <th>FIPS</th><th>County</th><th>State</th>
+      <th class="num">Customers</th>
+      <th class="num">Significant</th>
+      <th class="num">Max <code>x</code></th>
+      <th>Regime, and why it is in the set</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="mono">72013</td><td>Arecibo</td><td>Puerto Rico</td>
+      <td class="num">41,122</td><td class="num">43.5&nbsp;%</td><td class="num">1.000</td>
+      <td>Tropical/Caribbean. A chronically fragile grid and by a wide margin the strongest
+      signal anywhere in the dataset.</td>
+    </tr>
+    <tr>
+      <td class="mono">37119</td><td>Mecklenburg</td><td>North Carolina</td>
+      <td class="num">588,615</td><td class="num">0.4&nbsp;%</td><td class="num">0.023</td>
+      <td>Piedmont/south-east. Hurricane remnants inland plus severe summer convection;
+      Charlotte metro, so a large and well-reported denominator.</td>
+    </tr>
+    <tr>
+      <td class="mono">54005</td><td>Boone</td><td>West Virginia</td>
+      <td class="num">13,090</td><td class="num">12.4&nbsp;%</td><td class="num">0.343</td>
+      <td>Appalachian interior. Ice storms and thunderstorm downbursts on wooded terrain;
+      no maritime influence at all.</td>
+    </tr>
+    <tr>
+      <td class="mono">26097</td><td>Mackinac</td><td>Michigan</td>
+      <td class="num">8,757</td><td class="num">12.2&nbsp;%</td><td class="num">0.866</td>
+      <td>Great Lakes. Winter storms and repeated near-total local outages &mdash; the
+      highest-variance county of the five.</td>
+    </tr>
+    <tr>
+      <td class="mono">22071</td><td>Orleans</td><td>Louisiana</td>
+      <td class="num">212,936</td><td class="num">0.9&nbsp;%</td><td class="num">0.245</td>
+      <td>Gulf Coast. Included deliberately despite a thin January&ndash;August signal: peak
+      hurricane season falls inside the test window, and leaving the regime out because our
+      proxy window misses it would be exactly the wrong inference.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+Orleans is the one selection that a pure ranking would not have made, and we would defend
+it as the most important of the five. September to November is the Gulf hurricane season.
+A selection procedure calibrated on January to August will systematically under-rate Gulf
+counties, because their season has not started yet in the data it looks at. Correcting for
+that by hand is not cherry-picking; refusing to correct for it would be.
+</p>
+
+<div class="callout">
+  <p>
+    One caveat on this table that we would rather state than bury. The ranking ran before we
+    found the denominator problem described in Section&nbsp;3.4, so it used the
+    <code>MCC.csv</code> customer counts throughout, and Mecklenburg's was wrong by a factor of
+    20.9. That inflated every <code>x</code> we computed for the county and carried it into the
+    shortlist as the strongest mainland signal. Table&nbsp;1 is recomputed on the corrected
+    denominators, and on those numbers Mecklenburg is the <em>quietest</em> of the five, not the
+    second loudest: its significant-event rate falls from 13.8&nbsp;% to 0.4&nbsp;%.
+  </p>
+  <p>
+    We kept it. The regime argument that put it on the shortlist is unaffected by the
+    arithmetic error, and swapping it now would cost roughly 185 archived forecast calls &mdash;
+    93 to regenerate the submission at new coordinates and about 92 to give the replacement
+    county training coverage &mdash; which at the observed daily quota is two of the three days
+    left. Those calls are better spent on the seasonal training data described in
+    Section&nbsp;8. A team with more API budget should re-run the selection on corrected
+    denominators; the selection code takes the reconciled table as its input already.
+  </p>
+</div>
+
+<h2>3. Data acquisition and preprocessing</h2>
+
+<h3>3.1 Ground truth: finding EAGLE-I, and then reading it correctly</h3>
+
+<p>
+The competition materials point at the ORNL/OSTI record, which routes to a Globus endpoint
+covering 2014&ndash;2022 and requiring an account. We lost most of a day believing that was the
+only scriptable route. It is not: the complete 2014&ndash;2025 release, 17 files and about
+11.6&nbsp;GB, sits on figshare as article 24237376 (version 4, February 2026), and every annual
+file is an anonymous HTTPS GET against <code>ndownloader.figshare.com</code>. Our downloader
+resolves that file table from the figshare API rather than hard-coding it, and fetches
+whichever years are asked for.
+</p>
+
+<p>
+The annual files do not share a schema, and the drift is silent rather than fatal. Files
+from 2014&ndash;2022 and 2025 use <code>fips_code, county, state, customers_out,
+run_start_time</code>. The 2023 file calls the fourth column <code>sum</code>. The 2024 file adds a
+sixth column, <code>total_customers</code>. A straightforward <code>pd.concat</code> across years
+therefore produces a <code>customers_out</code> column that is entirely null for 2023 without
+raising anything at all. Our loader normalizes headers through an explicit alias table
+before concatenating, and raises on an unrecognized rename instead of degrading into
+nulls.
+</p>
+
+<h3>3.2 From sparse events to a dense target</h3>
+
+<p>
+EAGLE-I emits a row only when <code>customers_out &gt; 0</code>. Everything else is implicitly
+zero, and a model trained only on rows that exist would never see the negative class it
+mostly has to predict. Preprocessing reindexes each county onto a complete 15-minute grid
+across the period of interest and zero-fills the gaps, then computes <code>x</code> and clips it
+to [0,&nbsp;1]. The clip is not cosmetic: a handful of source rows report more customers out
+than the county's modeled customer count, which is a known mismatch between the outage feed
+and the customer-count file rather than a corrupt row to discard.
+</p>
+
+<p>
+About 6.5&nbsp;% of raw EAGLE-I rows carry an explicit null <code>customers_out</code>. That is not
+the same as an absent row. An absent row means no outage; an explicit null means the
+upstream ETL could not get a reading. Coercing nulls to zero would encode &ldquo;we do not know&rdquo;
+as &ldquo;confirmed no outage&rdquo;, and would bias the model toward under-predicting risk during
+exactly the periods when utility reporting is itself degraded &mdash; which is plausibly
+correlated with the severe weather we are trying to predict. We treat the two cases
+differently: a null in the <em>target</em> means the row is dropped, since there is nothing to
+train or score against; a null in an <em>autoregressive input</em> is left as a null and handed
+to LightGBM, which learns a default split direction for missing values. Imputing a
+fabricated number there would be strictly worse.
+</p>
+
+<h3>3.3 Weather: the Single Runs archive and its real rate limits</h3>
+
+<p>
+The guidelines require that prediction-time weather be the forecast genuinely available at
+the issue time, which rules out the Historical Forecast API (it stitches together only the
+first hours of successive runs and so does not preserve lead-time-specific values) and
+rules out observed reanalysis. We use Open-Meteo's Single Runs API with
+<code>models=ecmwf_ifs</code>, which returns a specific archived initialization of IFS HRES at
+9&nbsp;km. That archive begins on 14 March 2024; every other model in the endpoint is archived
+only from April 2026 and cannot overlap the test window. So IFS HRES is not a preference
+here, it is the only option, and its start date is the hard boundary on how far back
+training data can go.
+</p>
+
+<p>
+The binding constraint on this project turned out to be the endpoint's rate limits. The
+published free-tier terms allow 10,000 calls per day, 5,000 per hour and 600 per minute.
+The Single Runs endpoint enforces three much tighter windows, none of them documented, and
+we discovered each one only by hitting it: a per-minute cap, a per-hour cap that needs
+roughly 62 minutes to clear, and a daily cap that in practice cut in somewhere around 110
+to 130 calls. We found the daily one on the night of 19 August, mid-download, and it changed the shape of
+the project, because the same quota also pays for generating the submission. Two responses
+followed, both of which cost accuracy:
+</p>
+
+<ul>
+  <li>
+    The training sample was cut to 102 counties, stratified by Census region and by activity
+    tercile with a cap of three counties per state per cell (Texas alone has 151 eligible
+    counties, and an unstratified draw would have produced a Texas weather model). Runs were
+    taken at 00Z and 12Z on every second day rather than all four runs daily.
+  </li>
+  <li>
+    Task B shares Task A's forecast run rather than fetching a fresher one every six hours.
+    Fetching per-issue-time would have cost 367 distinct calls for the test window; sharing
+    one run per calendar day costs 93. The forecast a Task B batch consumes is therefore 12
+    to 30 hours old rather than 6, which is still a forecast genuinely available at issue
+    time and so still compliant, but it is a real skill concession made for a quota reason.
+    Reverting it is a one-line change if the quota stops being scarce.
+  </li>
+</ul>
+
+<p>
+Every response is cached to a local SQLite store keyed on the request URL, so a given
+(coordinates, run, variables) request is fetched exactly once in the life of the project and
+every re-run of the pipeline is free. That cache is what makes retraining and regenerating
+the submission cost nothing, and it is why the download scripts are safe to kill and
+restart.
+</p>
+
+<h3>3.4 The denominator, which is the biggest uncontrolled risk in the submission</h3>
+
+<p>
+<code>x</code> is a ratio, so the customer count in its denominator multiplies every number we
+predict. The organizers maintain their own fixed reference value and do not publish it. We
+therefore have to pick a denominator and say clearly which one we picked.
+</p>
+
+<p>
+The natural choice is <code>MCC.csv</code>, the modeled county customer file shipped with the
+EAGLE-I release. On 20 August we checked it, summing it per state against <code>coverage_history.csv</code>, an independent file
+from the same release that gives each state's total. MCC reproduces the state total to within a few percent almost everywhere. For
+North Carolina it lands at 1.82&nbsp;M against a published 5.30&nbsp;M, missing about two thirds of
+the state. Mecklenburg County, one of our five, carries 28,172 customers in MCC against
+588,615 in EAGLE-I's own 2024 annual file. Every <code>x</code> we had computed for Mecklenburg,
+in the training target and in the predictions, was inflated by a factor of 20.9.
+</p>
+
+<p>
+The obvious fix &mdash; switch to the 2024 file's column &mdash; is wrong in the other direction
+elsewhere. Puerto Rico's state total agrees almost exactly between the two sources
+(1,485,262 against 1,485,249), but they allocate it differently across municipios: Arecibo
+is 41,122 in MCC and 191,803 in the 2024 file, against a resident population of roughly
+87,000. The 2024 figure implies more electricity customers than people. Neither source is
+uniformly right, so a blanket swap trades a broken North Carolina for a broken Puerto Rico.
+</p>
+
+<p>
+The rule we adopted is per state, not per county: for each state, take the county allocation
+from whichever candidate source reproduces that state's independently published total more
+closely, with ties going to MCC as the documented default. Per state, because the failure
+mode we observed is a whole-state one, and because a per-county rule would have no
+independent quantity to check itself against. Three states end up using the 2024 in-file
+allocation (Kansas, North Carolina, Texas) and the other 49 keep MCC. The full table is in
+<code>data/processed/denominator_reconciliation.md</code>. This still cannot be validated
+against the organizers' reference, which is precisely why it is written down here.
+</p>
+
+<h3>3.5 Timestamp alignment and spatial matching</h3>
+
+<p>
+Everything internal is naive UTC. EAGLE-I's <code>run_start_time</code> is parsed as UTC and
+never localized; the Open-Meteo response comes back timezone-aware and is converted to naive
+UTC at the point where the weather table is renamed for joining, because a tz-aware and a
+tz-naive column merge into an empty result rather than an error. Output timestamps are
+formatted as ISO 8601 with an explicit <code>Z</code>. FIPS codes are strings everywhere,
+zero-padded to five characters at every load, which matters for Puerto Rico and for every
+state whose code starts with a zero.
+</p>
+
+<p>
+Spatial matching is the simplest thing that is defensible: each county is represented by its
+internal-point centroid from the 2025 US Census Gazetteer, and the forecast is requested at
+that single coordinate. Phase 1 targets counties rather than sites, so there is no
+site-to-county assignment to make; the approximation we are accepting is that one point
+represents a county's weather. For Mackinac County, which spans a lake shoreline, or for a
+large western county, that is a real simplification. Area-averaging over a grid of points
+per county would be better and costs a multiple of the API budget we did not have.
+</p>
+
+<h2>4. Features</h2>
+
+<p>
+Fifty features in five groups. The design principle throughout is that a feature must be a
+function only of data timestamped at or before the issue time, checked by a single shared
+assertion (<code>code/features/causality.py</code>) rather than by scattered ad-hoc guards.
+</p>
+
+<p>
+<strong>Raw forecast fields</strong> (12): 10&nbsp;m wind speed, gusts and direction; precipitation,
+rain and snowfall; 2&nbsp;m temperature and dew point; surface pressure; CAPE; cloud cover;
+freezing-level height.
+</p>
+
+<p>
+<strong>Derived weather</strong> (11). Gust cubed, because wind loading on a conductor or a tree
+scales roughly with the cube of speed and the linear gust value compresses exactly the range
+that breaks things. Centered rolling gust maxima over &plusmn;3&nbsp;h, &plusmn;6&nbsp;h and
+&plusmn;12&nbsp;h, which answer &ldquo;is this hour inside a windstorm&rdquo; rather than &ldquo;is this hour
+windy&rdquo;. Cumulative precipitation over the preceding 6 and 24 hours, as a proxy for soil
+saturation, since saturated ground plus gusts is what uproots trees. A wind&times;rain
+interaction term. Three-hour pressure change and one-hour gust jump for rate-of-change.
+All of these are computed strictly inside a single forecast trajectory, which is why a
+centered window is causally fine: those hours were disseminated together in one run, and
+causality here is run time against issue time, not neighboring hours within a forecast that
+has already arrived.
+</p>
+
+<p>
+<strong>Climatological exceedance</strong> (12). Per-county p95, p99 and p99.9 of gusts and
+precipitation, plus boolean flags for exceeding each. These are what let one model serve both
+a Gulf county and an Appalachian one: 60&nbsp;km/h means something different in each, and the
+exceedance flag says how unusual the value is locally instead of how large it is absolutely.
+The thresholds are fitted once on the training portion of the split only, saved with the
+model, and reapplied unchanged at prediction time. Recomputing them at serving time is a
+subtle and destructive bug: a single 62-hour forecast batch has a p95 gust roughly half the
+training p95 (26.4 against 54.4&nbsp;km/h for Orleans), so the exceedance features would quietly
+mean something different in production than in training.
+</p>
+
+<p>
+<strong>Autoregressive outage state</strong> (11). Observed <code>x</code> at issue time and at
+&minus;15&nbsp;min, &minus;30&nbsp;min, &minus;1&nbsp;h, &minus;2&nbsp;h and &minus;6&nbsp;h; one- and
+two-hour trends; the 24-hour rolling maximum; a flag for an outage in progress and the length
+of the current run. The guidelines restrict only the <em>weather</em> input to what a forecast
+could have provided; observed outage history up to issue time is realistic, since EAGLE-I and
+the ODIN feed are near-real-time, and it is the main source of genuine sub-hourly skill for
+Task B. IFS has no native 15-minute output, so the weather a Task B row sees is interpolated
+from hourly values and carries no true sub-hourly information. Whatever timing skill Task B
+has comes from this group.
+</p>
+
+<p>
+<strong>Temporal and static</strong> (6). Hour of day and day of year as sine/cosine pairs, lead
+time in hours, county FIPS as a categorical, and the customer count.
+</p>
+
+<h2>5. Model and training</h2>
+
+<p>
+One LightGBM regressor with <code>objective=tweedie</code> and
+<code>tweedie_variance_power=1.5</code>, 500 trees, learning rate 0.05, 63 leaves, minimum 50
+samples per leaf, 0.8 row and column subsampling. The Tweedie family is the natural fit for a
+non-negative continuous target with a point mass at zero, which is what <code>x</code> is; it
+handles the zero inflation inside the objective rather than by gluing two models together.
+Both tasks are served by the same model with lead time as a feature, since a per-task split
+would halve the training data for no structural reason.
+</p>
+
+<p>
+The split is temporal and never random: training on rows before 1 May 2025, validating on
+everything after. A random split would put two rows from the same storm fifteen minutes apart
+on opposite sides and make every validation number meaningless. The held-out period is not an unrepresentatively calm
+stretch: 32.7&nbsp;% of its rows are positive against 27.4&nbsp;% in training.
+</p>
+
+<p>
+Two decisions came out of bugs rather than design. First, there is no early stopping. An
+earlier version passed the validation set to LightGBM under the wrong keyword names, so no
+validation set was registered at all and the early-stopping callback fired after 25 of the
+configured 500 trees. The deployed model was that 25-tree stump: RMSE only slightly worse, but
+a maximum prediction of 0.012 against 0.086, so it had almost no dynamic range and could never
+have signaled a severe event.
+We fixed it by removing early stopping rather than by repairing the wiring, because stopping on
+the validation set and then reporting metrics on that same set would make every number in this
+report optimistic. Second, the model is saved as a bundle together with the fitted state its features depend on (the FIPS category ordering and the
+climatology thresholds), because re-deriving either at prediction time produces a model that
+silently answers a different question.
+</p>
+
+<h3>5.1 Blending with persistence at short lead</h3>
+
+<p>
+The lead-time curve showed persistence beating the model below about twelve hours and losing
+badly beyond it, so a single predictor is the wrong shape for a submission whose two tasks sit
+on opposite sides of that crossover. There is also a specific train/serve mismatch behind it.
+During training, issue time and run time are the same instant, so the model's
+<code>lead_hours</code> feature means both &ldquo;how far ahead is the target&rdquo; and &ldquo;how stale are the
+autoregressive features&rdquo;. At serving time the two come apart: a Task B row asks for a
+fifteen-minute-ahead prediction while carrying <code>lead_hours</code> between 12 and 36, because
+that is the age of the forecast. The model learned to discount autoregressive features at long lead, and nothing in its input
+says that this time they are minutes old. Persistence has no such confusion.
+</p>
+
+<p>
+So we fit, on the held-out period, a weight per operational-lead bucket that minimizes RMSE
+between the model and a plain persistence forecast, and apply it at prediction time on the
+operational lead. RMSE rather than MAE, because on a target that is 71.6&nbsp;% exact zeros, MAE
+is minimized by collapsing toward zero and a blend tuned on it would simply pick whichever
+component predicts less. The fitted weights on persistence are 0.75 below 6&nbsp;h, 0.70 from 6
+to 12&nbsp;h, 0.10 from 12 to 24&nbsp;h, and effectively zero beyond. Held-out RMSE in the 0&ndash;6&nbsp;h
+bucket, which is the whole of Task B, improves by 3.9&nbsp;%; overall RMSE across all buckets
+improves by 0.65&nbsp;%.
+</p>
+
+<h2>6. Handling the class imbalance</h2>
+
+<p>
+In the training table 71.6&nbsp;% of rows have <code>x</code> exactly zero, 28.4&nbsp;% are nonzero, and
+only 5.7&nbsp;% exceed 0.001. The mean is 0.00154. Any error metric averaged over all rows is
+therefore a statement about the zeros, and an always-zero forecast is a genuinely strong
+competitor on MAE rather than a strawman. We address this in four places.
+</p>
+
+<p>
+The objective absorbs the zero mass directly: Tweedie with a variance power of 1.5 is a
+compound Poisson-gamma, which is a distribution with an atom at zero and a continuous positive
+part, so the model is not being asked to fit a point mass with a Gaussian.
+</p>
+
+<p>
+Evaluation is stratified rather than pooled. Every result in Section&nbsp;7 is reported both over
+all rows and restricted to rows where the observed <code>x</code> exceeds 0.001, and the always-zero
+baseline appears in every table so that a reader can see how much of a number is skill and how
+much is arithmetic on zeros. We also report maximum prediction per model, because a model that
+looks competitive on average while never predicting above 1&nbsp;% of customers out is useless for
+the actual application.
+</p>
+
+<p>
+The hurdle formulation in Section&nbsp;7 attacks the imbalance structurally by splitting the
+question in two: a classifier for whether an event happens at all, and a severity regressor
+trained only on positives, so that the severity head never sees a zero and is not dragged
+toward one.
+</p>
+
+<p>
+We planned a fourth measure, undersampling quiet periods with inverse-probability weights, and
+did not need it: the forecast archive already constrains the table to 92 run times rather than a
+row every fifteen minutes, so at 663k rows it trains in under a minute, and undersampling would
+have traded information away to buy speed we already had.
+</p>
+
+<h2>7. Results</h2>
+
+<p>
+All numbers below are on the held-out period after 1 May 2025 (129,526 rows, of which 8,921
+have observed <code>x</code> above 0.001), using a model that never saw a row from that period,
+with thresholds and category encodings fitted only on the earlier portion.
+</p>
+
+<table>
+  <caption>Table 2 &mdash; Baselines, model, and feature-group ablations. Each ablation is a full
+  retrain with that group removed, so its effect is marginal given everything else, not a
+  univariate correlation. Lower is better in the first three columns.</caption>
+  <thead>
+    <tr>
+      <th>Predictor</th>
+      <th class="num">MAE</th>
+      <th class="num">RMSE</th>
+      <th class="num">MAE, events</th>
+      <th class="num">Max pred.</th>
+      <th class="num">&Delta;RMSE vs full</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>always zero</td>
+      <td class="num">0.001475</td><td class="num">0.016278</td><td class="num">0.020788</td>
+      <td class="num">0.000</td><td class="num">+3.11&nbsp;%</td>
+    </tr>
+    <tr>
+      <td>persistence (<code>x</code> at issue time)</td>
+      <td class="num">0.001903</td><td class="num">0.016610</td><td class="num">0.020981</td>
+      <td class="num">0.147</td><td class="num">+5.21&nbsp;%</td>
+    </tr>
+    <tr>
+      <td>per-county climatology</td>
+      <td class="num">0.002387</td><td class="num">0.015986</td><td class="num">0.020064</td>
+      <td class="num">0.027</td><td class="num">+1.26&nbsp;%</td>
+    </tr>
+    <tr class="rowgroup">
+      <td><strong>full model (LightGBM Tweedie)</strong></td>
+      <td class="num">0.001485</td><td class="num best">0.015787</td><td class="num">0.018974</td>
+      <td class="num">0.059</td><td class="num">&mdash;</td>
+    </tr>
+    <tr class="rowgroup">
+      <td>&minus; raw forecast fields</td>
+      <td class="num">0.001535</td><td class="num">0.015787</td><td class="num">0.019386</td>
+      <td class="num">0.099</td><td class="num">0.00&nbsp;%</td>
+    </tr>
+    <tr>
+      <td>&minus; derived weather</td>
+      <td class="num">0.001532</td><td class="num">0.015823</td><td class="num">0.018970</td>
+      <td class="num">0.055</td><td class="num">+0.23&nbsp;%</td>
+    </tr>
+    <tr>
+      <td>&minus; climatological exceedance</td>
+      <td class="num">0.001516</td><td class="num">0.015775</td><td class="num">0.019002</td>
+      <td class="num">0.075</td><td class="num">&minus;0.08&nbsp;%</td>
+    </tr>
+    <tr>
+      <td>&minus; autoregressive state</td>
+      <td class="num">0.001588</td><td class="num">0.015904</td><td class="num">0.019280</td>
+      <td class="num">0.156</td><td class="num">+0.74&nbsp;%</td>
+    </tr>
+    <tr>
+      <td>&minus; temporal encodings</td>
+      <td class="num">0.001533</td><td class="num">0.015815</td><td class="num">0.019124</td>
+      <td class="num">0.049</td><td class="num">+0.18&nbsp;%</td>
+    </tr>
+    <tr>
+      <td>&minus; static county features</td>
+      <td class="num">0.001513</td><td class="num">0.015877</td><td class="num">0.018890</td>
+      <td class="num">0.062</td><td class="num">+0.57&nbsp;%</td>
+    </tr>
+    <tr class="rowgroup">
+      <td>hurdle, <code>&tau; = 0</code></td>
+      <td class="num best">0.001422</td><td class="num">0.015948</td><td class="num">0.019107</td>
+      <td class="num">0.045</td><td class="num">+1.02&nbsp;%</td>
+    </tr>
+    <tr>
+      <td>hurdle, <code>&tau; = 0.001</code></td>
+      <td class="num">0.001563</td><td class="num">0.015934</td><td class="num best">0.018969</td>
+      <td class="num">0.076</td><td class="num">+0.93&nbsp;%</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+The full model beats all three baselines on RMSE and on event-restricted MAE, and loses to
+always-zero on pooled MAE by a hair. That last point is not a defect, it is what pooled MAE
+measures on a target that is three-quarters zeros: predicting a small positive number
+everywhere costs MAE on 122,000 zero rows to buy accuracy on 8,921 event rows. Per-county
+climatology is the strongest of the naive baselines on RMSE, which is itself informative &mdash;
+a large part of what any model can learn here is simply that some counties break more often
+than others.
+</p>
+
+<p>
+The ablations are uncomfortable reading and we are not going to dress them up. Removing the
+autoregressive group costs the most (+0.74&nbsp;% RMSE), removing the static county features
+costs +0.57&nbsp;%, and removing all twelve raw forecast fields costs nothing measurable at all.
+Derived weather contributes +0.23&nbsp;%, and the climatological exceedance features are, on
+this training set, worth slightly less than nothing. Feature importance tells the same story
+from the other side: county identity alone accounts for 47&nbsp;% of total split gain.
+</p>
+
+<table>
+  <caption>Table 3 &mdash; The seven highest-gain features, as a share of the model's total split gain.</caption>
+  <thead>
+    <tr><th>Feature</th><th class="num">Gain share</th><th>Group</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>fips_code</code></td><td class="num">47.1&nbsp;%</td><td>static</td></tr>
+    <tr><td><code>precip_cum_24h</code></td><td class="num">7.2&nbsp;%</td><td>derived weather</td></tr>
+    <tr><td><code>x_lag_1h</code></td><td class="num">6.3&nbsp;%</td><td>autoregressive</td></tr>
+    <tr><td><code>doy_sin</code></td><td class="num">5.7&nbsp;%</td><td>temporal</td></tr>
+    <tr><td><code>gust_roll_max_12h</code></td><td class="num">2.4&nbsp;%</td><td>derived weather</td></tr>
+    <tr><td><code>x_at_issue</code></td><td class="num">2.1&nbsp;%</td><td>autoregressive</td></tr>
+    <tr><td><code>precip_cum_6h</code></td><td class="num">2.0&nbsp;%</td><td>derived weather</td></tr>
+  </tbody>
+</table>
+
+<p>
+Two readings are available and we cannot yet distinguish them with the data we have. One is
+that county-level outage rates are mostly a property of the utility and the vegetation, and
+weather adds less than intuition suggests at this spatial and temporal resolution. The other
+is that our training window &mdash; five and a half months of one year, containing no hurricane
+and no major landfall event &mdash; simply does not contain enough severe weather for the model
+to learn a weather response, so it settles for base rates. The derived features that do carry
+weight (24-hour cumulative precipitation, 12-hour rolling gust maximum) are the two that
+describe a sustained event rather than an instantaneous value, which is at least consistent
+with the second reading. Section 8 describes what we are doing about it.
+</p>
+
+<h3>7.1 Skill against lead time</h3>
+
+<figure>
+  <img src="figures/skill_by_lead.png" alt="Skill relative to the always-zero baseline, by lead time bucket">
+  <figcaption>
+    <strong>Figure 1.</strong> Error reduction against the always-zero baseline, per lead-time
+    bucket, on the 129,325 held-out rows where persistence is defined. Raw error per bucket is
+    not comparable across buckets on this target: events are rare and clustered, so each bucket
+    catches a different set of storms, and the unnormalized curve swings by up to 50&nbsp;% for
+    reasons unrelated to lead time.
+  </figcaption>
+</figure>
+
+<p>
+Figure 1 is the curve the guidelines say scoring will look at. Persistence is the better
+forecast below twelve hours and is worse than no forecast at all beyond a day, which is the
+behavior a persistence forecast should have. The model is flat by comparison: it holds a small
+advantage over always-zero at every horizon and loses it slowly. The blend takes whichever is
+ahead, and the gain is concentrated exactly where Task B lives.
+</p>
+
+<h3>7.2 The hurdle alternative</h3>
+
+<p>
+The hurdle model is the guidelines' class-imbalance question posed as an experiment: instead
+of one Tweedie head, a binary classifier for <code>P(x &gt; &tau;)</code> multiplied by a severity
+head trained only on rows above <code>&tau;</code>. With <code>&tau; = 0</code> it produces the best
+pooled MAE of anything we tried, beating even always-zero, and with <code>&tau; = 0.001</code> it
+edges the Tweedie model on event MAE. Both lose to Tweedie on RMSE by about 1&nbsp;%, and both
+cost two models instead of one. We kept Tweedie for the submission on that basis, but the
+margin is small enough that the choice is a preference for simplicity rather than a
+demonstrated win.
+</p>
+
+<p>
+This comparison took two attempts. The first version regressed severity on raw <code>x</code>
+with a gamma objective (strictly positive target, no zero mass to model) and produced
+predictions around 3.4&times;10<sup>4</sup> for a quantity bounded by 1. Gamma's log link over
+labels spanning 1e&minus;7 to 1 puts almost no curvature on the small ones and lets leaf values
+run away; clipping to [0,&nbsp;1] then turned that into a near-constant 0.24 everywhere, an MAE
+of 0.24 against a target averaging 0.0015. Regressing <code>log x</code> under squared loss and
+exponentiating bounds the quantity by construction. The residual bias is that
+<code>exp(E[log x])</code> is a geometric mean sitting below <code>E[x]</code>, which we accept
+rather than add a smearing correction we could not validate in the time left.
+</p>
+
+
+
+<h2>8. What limits these numbers</h2>
+
+<p>
+The training set is the limitation that matters, and it shrank at every stage of the week for
+reasons that were each individually defensible. A multi-year window became eighteen months once the IFS archive's March 2024 start was
+confirmed; the per-hour rate limit then cut the county sample from ~3,050 to 102 and the run
+cadence to every other day; the daily quota, found last, capped how many runs we could add.
+The model behind these numbers is trained on 1 January to 14 June 2025: 92 forecast runs
+across 102 counties in 40 states.
+</p>
+
+<p>
+That window contains no Atlantic hurricane season, and the evaluated window is mostly hurricane
+season. It is the most obvious weakness in the submission and we are addressing it in the only
+way the quota permits: by downloading the September&ndash;November 2024 runs, which are seasonally
+matched to the test window and are the closest analogue available inside the archive. Ground
+truth for 2024 is already local, and the cached weather makes retraining and regenerating free
+in quota terms, so this is purely a question of how many calls arrive before the deadline.
+</p>
+
+<p>
+Three smaller caveats. The climatological quantiles are fitted on a few months of a single year
+and are not a climate normal, so &ldquo;p99 gust&rdquo; here means &ldquo;p99 of what this county saw in the
+training window&rdquo;. Task B's weather is interpolated from hourly IFS output and contains no
+genuine sub-hourly information. And the denominator remains the largest uncontrolled risk in the
+submission: we predict a ratio whose divisor the organizers hold privately, and if their
+reference for a county differs from ours, our predictions for it are scaled wrong by exactly
+that factor however good the model is.
+</p>
+
+<h2>9. Data sources and licenses</h2>
+
+<p>
+Every source used, with the license verified at the source on 21 August 2026 rather than assumed.
+</p>
+
+<table>
+  <caption>Table 4 &mdash; Data sources and licenses.</caption>
+  <thead>
+    <tr><th>Source</th><th>Use</th><th>License</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <strong>EAGLE-I Recorded Electricity Outages 2014&ndash;2025</strong> (Oak Ridge National
+        Laboratory). Brelsford, Tennille, Myers, Chinthavali, Tansakul, Denman et&nbsp;al.,
+        figshare article 24237376 v4, 25 Feb 2026.
+        <span class="mono">doi:10.6084/m9.figshare.24237376.v4</span>
+      </td>
+      <td>Ground-truth outage counts; <code>MCC.csv</code> and <code>coverage_history.csv</code> for
+      the denominator.</td>
+      <td><strong>CC BY 4.0</strong>, as returned by the figshare API for that article.</td>
+    </tr>
+    <tr>
+      <td>
+        <strong>Open-Meteo Single Runs API</strong><br>
+        <span class="mono">single-runs-api.open-meteo.com</span>
+      </td>
+      <td>Delivery of archived ECMWF IFS HRES initializations, the sole weather input for both
+      training and prediction.</td>
+      <td><strong>CC BY 4.0</strong> under the free non-commercial tier, per Open-Meteo's Terms of
+      Use. Attribution: <em>Weather data by Open-Meteo.com</em>.</td>
+    </tr>
+    <tr>
+      <td>
+        <strong>ECMWF IFS HRES open forecast data</strong> (originating model behind the above)
+      </td>
+      <td>The forecast fields themselves.</td>
+      <td><strong>CC BY 4.0</strong> plus the ECMWF Terms of Use: &ldquo;a subset of ECMWF real-time
+      forecast data from the IFS and AIFS models is made available to the public free of charge
+      &hellip; governed by the Creative Commons CC-BY-4.0 licence&rdquo;, subject to attribution.</td>
+    </tr>
+    <tr>
+      <td>
+        <strong>US Census Bureau 2025 County Gazetteer</strong><br>
+        <span class="mono">2025_Gaz_counties_national.txt</span>
+      </td>
+      <td>County internal-point centroids, used as the forecast coordinate for each county.</td>
+      <td>US Government work, not subject to domestic copyright (17 U.S.C. &sect;105); Census
+      Bureau data are in the public domain.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p class="footnote">
+Code, execution order and expected runtimes are in <code>README.md</code>. The submitted
+<code>predictions.csv</code> is regenerated end to end by <code>python code/predict.py</code>, which
+also runs the format validator before writing.
+</p>

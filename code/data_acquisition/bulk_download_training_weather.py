@@ -108,12 +108,22 @@ def load_training_locations() -> pd.DataFrame:
     return merged[["fips_code", "latitude", "longitude"]].reset_index(drop=True)
 
 
-def fetch_with_retry(locations: pd.DataFrame, run_time: pd.Timestamp) -> pd.DataFrame:
+def fetch_with_retry(
+    locations: pd.DataFrame, run_time: pd.Timestamp, forecast_hours: int = FORECAST_HOURS
+) -> pd.DataFrame:
+    """fetch_single_run with the minute/hour rate-limit backoff applied.
+
+    forecast_hours is a parameter rather than the module constant because predict.py
+    reuses this for the submission, where the horizon must be exactly
+    SUBMISSION_FORECAST_HOURS — it goes into the request URL, so a mismatched value
+    would miss the cache and spend quota that isn't there. The default keeps this
+    module's own caller unchanged.
+    """
     minute_attempt = 0
     hour_attempt = 0
     while True:
         try:
-            return fetch_single_run(locations, run_time, forecast_hours=FORECAST_HOURS)
+            return fetch_single_run(locations, run_time, forecast_hours=forecast_hours)
         except RateLimitError as e:
             if e.scope == "day":
                 # Handled one level up, in main()'s outer loop: unlike the other two
@@ -141,20 +151,31 @@ def run_output_path(run_time: pd.Timestamp) -> Path:
     return WEATHER_DIR / f"run_{run_time.strftime('%Y%m%dT%H%M')}.parquet"
 
 
-def main():
+def main(start=TRAIN_START, end=TRAIN_END, day_stride=DAY_STRIDE, budget=ADDITIONAL_RUN_BUDGET):
+    """Fetch IFS runs for the training counties over [start, end].
+
+    The window is a parameter rather than only the module constants because the model
+    turned out to have a seasonal generalization gap: the 2025 runs stop on 14 June
+    (the daily quota, see the docstring above), while the test window is September to
+    November. Autumn runs from 2024 are the only way to show the model that season
+    without training on the evaluated period itself, and the IFS archive reaches back
+    to 2024-03-14, so they are available. Defaults reproduce the original 2025 pass.
+    """
     WEATHER_DIR.mkdir(parents=True, exist_ok=True)
     locations = load_training_locations()
     print(f"Training locations: {len(locations)}")
+    print(f"Window: {pd.Timestamp(start).date()} .. {pd.Timestamp(end).date()} "
+          f"(stride {day_stride}d, runs at {RUN_HOURS}Z, budget {budget})")
 
     full_schedule = [
         pd.Timestamp(d) + pd.Timedelta(hours=h)
-        for d in pd.date_range(TRAIN_START, TRAIN_END, freq="D")[::DAY_STRIDE]
+        for d in pd.date_range(start, end, freq="D")[::day_stride]
         for h in RUN_HOURS
     ]
     already_done = [rt for rt in full_schedule if run_output_path(rt).exists()]
     still_needed = [rt for rt in full_schedule if not run_output_path(rt).exists()]
 
-    if len(still_needed) <= ADDITIONAL_RUN_BUDGET:
+    if len(still_needed) <= budget:
         run_times = full_schedule
     else:
         # Evenly-spaced subsample of what's left, not the next ADDITIONAL_RUN_BUDGET
@@ -162,7 +183,7 @@ def main():
         # (see PLAN.md), so taking the next chunk sequentially would spend the whole
         # budget extending that same cluster and never reach the summer/early
         # hurricane-season months the Jan-Aug window was originally chosen to cover.
-        idx = np.linspace(0, len(still_needed) - 1, ADDITIONAL_RUN_BUDGET, dtype=int)
+        idx = np.linspace(0, len(still_needed) - 1, budget, dtype=int)
         sampled = sorted({still_needed[i] for i in idx})
         run_times = already_done + sampled
         print(f"Budget cap: {len(still_needed)} runs still needed for the full schedule, "
@@ -221,4 +242,15 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--start", default=str(TRAIN_START.date()))
+    parser.add_argument("--end", default=str(TRAIN_END.date()))
+    parser.add_argument("--day-stride", type=int, default=DAY_STRIDE)
+    parser.add_argument("--budget", type=int, default=ADDITIONAL_RUN_BUDGET,
+                        help="max NEW runs to fetch this pass (quota guard)")
+    args = parser.parse_args()
+
+    main(start=pd.Timestamp(args.start), end=pd.Timestamp(args.end),
+         day_stride=args.day_stride, budget=args.budget)
