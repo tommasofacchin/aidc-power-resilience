@@ -89,6 +89,9 @@ python code/preprocessing/reconcile_denominators.py
 python code/preprocessing/select_counties.py
 
 # 5. The 102-county stratified training sample -> data/processed/training_counties.csv
+#    This file is VERSIONED, and this step keeps it rather than re-deriving it: the
+#    archived forecast set under data/raw was downloaded for exactly these counties.
+#    --refresh re-selects, and then step 6 has to fetch runs for whatever it adds.
 python code/preprocessing/select_training_sample.py
 
 # 6. Weather. The long pole - see the rate-limit note in section 2.
@@ -98,6 +101,9 @@ python code/data_acquisition/bulk_download_training_weather.py --start 2025-01-0
 python code/data_acquisition/bulk_download_training_weather.py --start 2024-09-01 --end 2024-11-30 --budget 80
 
 # 7. Feature table + climatology -> data/processed/training_table_partial.parquet
+#    Fails if a selected training county has no forecast runs on disk, rather than
+#    dropping it silently. --allow-missing-counties accepts a partial table on purpose,
+#    which is what you want while a weather download is still filling in.
 python code/features/build_training_table.py --years 2024 2025
 
 # 8. Train -> data/processed/model_bundle/
@@ -153,19 +159,29 @@ originally produced their outputs, so treat them as approximate.
 |---|---|---|---|
 | 1. EAGLE-I download | ~25 min | instant | 2.9 GB over HTTPS, bandwidth-bound |
 | 2. Gazetteer | ~5 s | instant | 140 KB |
-| 3. Denominator reconciliation | ~5 min | ~5 min | reads the 2024 file for its in-file `total_customers` |
-| 4. Select 5 counties | ~4 min | ~4 min | full scan of the 2025 annual file |
-| 5. Training sample | ~4 min | ~4 min | reuses step 4's climatology, no rescan |
+| 3. Denominator reconciliation | ~2 min | ~10 s | scans 2024 + 2025 once, then caches both scans |
+| 4. Select 5 counties | ~45 s | ~45 s | full scan of the 2025 annual file |
+| 5. Training sample | ~2 s | ~2 s | keeps the versioned sample; `--refresh` re-selects |
 | 6. Weather download | **days** | instant | quota-bound, not bandwidth-bound — see section 2 |
-| 7. Build training table | ~1.5 min | — | 184 runs × 102 counties → 1.33 M rows |
-| 8. Train | ~30 s | — | LightGBM, CPU, 1.2 M training rows |
-| 9. Blend fit | ~5 s | — | |
-| 10. Generate submission | ~4 min | ~4 min | 93 IFS runs, all cache hits after the first pass |
-| 11. Validate | ~3 s | — | |
+| 7. Build training table | ~1.5 min | — | 242 runs × 102 counties → 1.75 M rows |
+| 8. Train | ~17 s | — | LightGBM, CPU, 1.24 M training rows |
+| 9. Blend fit | ~20 s | — | weight × decay half-life grid, per lead bucket |
+| 10. Generate submission | ~8 min | ~8 min | 93 IFS runs, all cache hits after the first pass |
+| 11. Validate | ~1 s | — | |
 
-**End to end from a clean checkout: about an hour of compute, plus however many days the
-weather quota takes.** A reproducer who only wants to re-derive the model from an existing
-`data/` directory needs steps 7–11, about 6 minutes.
+**End to end from a clean checkout: about 13 minutes of compute for steps 3–11, plus the
+one-off downloads and however many days the weather quota takes.** A reproducer who only
+wants to re-derive the model from an existing `data/` directory needs steps 7–11, about
+10 minutes.
+
+**This was tested, not asserted.** On 22 August 2026 the repository was cloned into an empty
+directory, a fresh virtualenv was built from `code/requirements.txt`, `data/raw` was supplied
+from the existing archive (steps 1, 2 and 6 are downloads, and step 6 is quota-bound over
+days), and steps 3–11 were run in the order above. The resulting `submission/predictions.csv`
+is **byte-identical** to the committed one — same MD5, zero differing rows — as are the
+reconciled denominators, the county selection and the training sample. An earlier run of the
+same test is what surfaced the two defects described under *The training sample is an input*
+below.
 
 ## 5. Repository layout
 
@@ -196,6 +212,14 @@ been disseminated by `issue_time` — never observed weather at `target_time`. T
 is asserted at runtime by [code/features/causality.py](code/features/causality.py), not
 just respected by construction. See [PLAN.md section 2.2](PLAN.md) for the mapping and its
 rationale.
+
+**The training sample is an input, not an output.** `data/processed/training_counties.csv`
+is the one versioned file under `data/`, because the archived forecast runs were fetched for
+exactly those 102 counties at a quota that makes fetching a different sample a multi-day
+operation. Left unversioned, a clean checkout re-derived a *different* sample from the
+climatology, and the counties it added had no weather: they merged to nothing and the
+pipeline trained on 59 counties while reporting success at every step. Step 7 now treats
+that mismatch as fatal, and step 5 will not overwrite the pinned file without `--refresh`.
 
 **Determinism.** The train/validation split is temporal (a fixed date, not a random
 shuffle) and LightGBM runs with a fixed seed, so repeated runs on the same table reproduce
