@@ -79,14 +79,17 @@ python code/data_acquisition/eagle_i.py
 # 2. County centroids, from the Census Gazetteer
 python code/data_acquisition/county_coordinates.py
 
-# 3. The five reporting counties  -> data/processed/selected_counties.csv
+# 3. Reconciled per-county denominator -> data/processed/total_customers_reconciled.csv
+#    Must run BEFORE step 4: county selection divides by this denominator, and raw
+#    MCC.csv is wrong by up to 21x for some counties. Step 4 refuses to fall back to it.
+python code/preprocessing/reconcile_denominators.py
+
+# 4. The five reporting counties  -> data/processed/selected_counties.csv
+#    Also writes county_climatology_jan_aug_2025.parquet, which step 5 consumes.
 python code/preprocessing/select_counties.py
 
-# 4. The 102-county stratified training sample -> data/processed/training_counties.csv
+# 5. The 102-county stratified training sample -> data/processed/training_counties.csv
 python code/preprocessing/select_training_sample.py
-
-# 5. Reconciled per-county denominator -> data/processed/total_customers_reconciled.csv
-python code/preprocessing/reconcile_denominators.py
 
 # 6. Weather. The long pole - see the rate-limit note in section 2.
 #    --budget caps how many NEW runs one pass may fetch, so training downloads cannot
@@ -150,9 +153,9 @@ originally produced their outputs, so treat them as approximate.
 |---|---|---|---|
 | 1. EAGLE-I download | ~25 min | instant | 2.9 GB over HTTPS, bandwidth-bound |
 | 2. Gazetteer | ~5 s | instant | 140 KB |
-| 3. Select 5 counties | ~4 min | ~4 min | full scan of the 2025 annual file |
-| 4. Training sample | ~4 min | ~4 min | same scan |
-| 5. Denominator reconciliation | ~5 min | ~5 min | reads the 2024 file for its in-file `total_customers` |
+| 3. Denominator reconciliation | ~5 min | ~5 min | reads the 2024 file for its in-file `total_customers` |
+| 4. Select 5 counties | ~4 min | ~4 min | full scan of the 2025 annual file |
+| 5. Training sample | ~4 min | ~4 min | reuses step 4's climatology, no rescan |
 | 6. Weather download | **days** | instant | quota-bound, not bandwidth-bound — see section 2 |
 | 7. Build training table | ~1.5 min | — | 184 runs × 102 counties → 1.33 M rows |
 | 8. Train | ~30 s | — | LightGBM, CPU, 1.2 M training rows |

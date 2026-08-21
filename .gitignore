@@ -3,6 +3,14 @@
 # dagli script in code/data_acquisition/. Mai versionarli.
 data/*
 !data/.gitkeep
+# The one exception. training_counties.csv is not a derived artifact in practice: the
+# archived forecast set under data/raw was downloaded for exactly these counties, at a
+# rate limit that makes re-downloading a different sample a multi-day operation. Leaving
+# it unversioned let a clean checkout re-derive a different sample and train on 59 of
+# the 102 counties without a single error (see build_training_table.py). It is an input.
+!data/processed/
+data/processed/*
+!data/processed/training_counties.csv
 outputs/
 *.parquet
 *.feather

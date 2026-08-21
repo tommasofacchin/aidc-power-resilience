@@ -76,37 +76,76 @@ AUTUMN_END = pd.Timestamp("2024-12-01")
 LEAD_EDGES = [6, 12, 24, 48, 72]
 WEIGHT_GRID = np.round(np.arange(0.0, 1.01, 0.05), 2)
 
+# Half-lives in hours for the restoration decay, plus None for flat carry-forward — the
+# unconditional assumption of the previous version. Flat persistence says a county with
+# 4% of customers out now still has 4% out in two days, which no restoration crew makes
+# true; the decay lets the fit discover the rate instead of asserting one. None being in
+# the grid means the search can always fall back to the old behaviour, so this cannot
+# make the fitted blend worse on the window it is fitted on.
+HALFLIFE_GRID = [None, 96, 72, 48, 36, 24, 18, 12, 9, 6, 4, 3, 2]
+
+
+def decay(persistence: np.ndarray, lead_hours: np.ndarray, halflife: float | None) -> np.ndarray:
+    """Persistence carried forward with exponential restoration decay.
+
+    halflife=None reproduces flat carry-forward exactly.
+    """
+    if halflife is None:
+        return persistence
+    return persistence * np.power(0.5, np.asarray(lead_hours, dtype=float) / float(halflife))
+
 
 def bucket_of(lead_hours: pd.Series) -> pd.Series:
     return pd.cut(lead_hours, bins=[0] + LEAD_EDGES, right=True)
 
 
-def fit_weights(val_df: pd.DataFrame, model_pred: np.ndarray) -> dict[str, float]:
-    """Per-bucket weight on persistence that minimises RMSE against the truth.
+def fit_weights(val_df: pd.DataFrame, model_pred: np.ndarray) -> dict[str, dict]:
+    """Per-bucket persistence weight and decay half-life that minimise RMSE.
 
     RMSE rather than MAE: on a target that is 71.6% exact zeros, MAE is minimised by
     collapsing toward zero (the always-zero baseline is nearly unbeatable on it), so
     tuning a blend on MAE would just pick whichever component predicts less.
+
+    Two parameters are fitted jointly per bucket rather than one, because they trade
+    against each other: shrinking a stale persistence toward zero can be done either by
+    weighting the model up or by decaying the carry-forward, and fitting one at a time
+    would attribute to the first whatever the second could have explained. Two
+    parameters against tens of thousands of rows per bucket is not a quantity of
+    freedom that needs regularising.
     """
     truth = val_df["target_x"].to_numpy()
     # A missing x_at_issue means EAGLE-I had no reading at issue_time, not "no outage" —
     # persistence is undefined there, so those rows fall back to the model alone.
     persistence = val_df["x_at_issue"].to_numpy()
     usable = ~np.isnan(persistence)
+    leads = val_df["lead_hours"].to_numpy(dtype=float)
     buckets = bucket_of(val_df["lead_hours"])
 
     weights = {}
     for b in buckets.cat.categories:
         sel = (buckets == b).to_numpy() & usable
         if sel.sum() < 1000:
-            weights[str(b)] = 0.0
+            weights[str(b)] = {"w_persistence": 0.0, "halflife_h": None}
             continue
-        t, m, p = truth[sel], model_pred[sel], persistence[sel]
-        rmses = [np.sqrt((((1 - w) * m + w * p - t) ** 2).mean()) for w in WEIGHT_GRID]
-        best = int(np.argmin(rmses))
-        weights[str(b)] = float(WEIGHT_GRID[best])
-        print(f"  {str(b):<12} n={sel.sum():>7,}  best w_persistence={WEIGHT_GRID[best]:.2f}  "
-              f"RMSE {rmses[-1] if best == len(WEIGHT_GRID)-1 else rmses[0]:.6f} -> {rmses[best]:.6f}")
+        t, m, p, lead = truth[sel], model_pred[sel], persistence[sel], leads[sel]
+
+        model_only = float(np.sqrt(((m - t) ** 2).mean()))
+        flat_best = min(
+            float(np.sqrt((((1 - w) * m + w * p - t) ** 2).mean())) for w in WEIGHT_GRID
+        )
+        best_rmse, best_w, best_hl = None, 0.0, None
+        for halflife in HALFLIFE_GRID:
+            decayed = decay(p, lead, halflife)
+            for w in WEIGHT_GRID:
+                rmse = float(np.sqrt((((1 - w) * m + w * decayed - t) ** 2).mean()))
+                if best_rmse is None or rmse < best_rmse:
+                    best_rmse, best_w, best_hl = rmse, float(w), halflife
+
+        weights[str(b)] = {"w_persistence": best_w, "halflife_h": best_hl}
+        halflife_label = "flat" if best_hl is None else f"{best_hl}h"
+        print(f"  {str(b):<12} n={sel.sum():>7,}  w_persistence={best_w:.2f} "
+              f"halflife={halflife_label:>5}  RMSE model {model_only:.6f} -> "
+              f"flat blend {flat_best:.6f} -> decayed blend {best_rmse:.6f}")
     return weights
 
 
@@ -116,12 +155,16 @@ def apply_blend(
 ) -> np.ndarray:
     """Blend at prediction time. lead_hours here must be the OPERATIONAL lead."""
     out = np.asarray(model_pred, dtype=float).copy()
+    persistence = np.asarray(persistence, dtype=float)
+    lead_hours = np.asarray(lead_hours, dtype=float)
     buckets = bucket_of(pd.Series(lead_hours))
-    for b, w in weights.items():
+    for b, spec in weights.items():
+        w = float(spec["w_persistence"])
         if w == 0:
             continue
+        decayed = decay(persistence, lead_hours, spec.get("halflife_h"))
         sel = (buckets.astype(str) == b).to_numpy() & ~np.isnan(persistence)
-        out[sel] = (1 - w) * out[sel] + w * np.asarray(persistence, dtype=float)[sel]
+        out[sel] = (1 - w) * out[sel] + w * decayed[sel]
     return np.clip(out, 0, 1)
 
 

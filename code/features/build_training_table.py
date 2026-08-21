@@ -147,6 +147,9 @@ if __name__ == "__main__":
     parser.add_argument("--years", type=int, nargs="+", default=[2025],
                         help="years to use for BOTH weather runs and ground truth; "
                              "add 2024 once the autumn runs have finished downloading")
+    parser.add_argument("--allow-missing-counties", action="store_true",
+                        help="proceed even if selected training counties have no weather "
+                             "runs on disk yet (use while a download is still filling in)")
     args = parser.parse_args()
 
     training_counties = pd.read_csv(
@@ -161,6 +164,27 @@ if __name__ == "__main__":
     climatology.to_parquet(PROCESSED_DIR / "climatology.parquet")
     print(f"Fitted climatology on run_time < {VAL_START.date()} for "
           f"{len(climatology)} counties -> {PROCESSED_DIR / 'climatology.parquet'}")
+
+    # A selected county with no weather runs on disk does not raise anywhere: it merges
+    # to nothing and vanishes. That is how a clean-checkout reproduction on 22 Aug 2026
+    # silently trained on 59 of the 102 selected counties and produced a different,
+    # weaker model with every step reporting success — the sample is re-derived from the
+    # climatology, the weather cache is keyed to the sample selected before the
+    # denominators were reconciled, and the two had drifted apart. Reproducibility is a
+    # graded deliverable here, so this mismatch is fatal by default rather than a
+    # warning nobody reads in 60 lines of pipeline output.
+    missing = sorted(set(fips_codes) - set(table["fips_code"].unique()))
+    if missing:
+        message = (
+            f"{len(missing)} of {len(fips_codes)} selected training counties produced no "
+            f"rows — they have no forecast runs under data/raw/ifs_training_runs. "
+            f"First few: {missing[:8]}. Either download weather for them, re-select the "
+            f"sample against the counties actually covered, or pass "
+            f"--allow-missing-counties to accept a partial table deliberately."
+        )
+        if not args.allow_missing_counties:
+            raise SystemExit(f"ERROR: {message}")
+        print(f"WARNING: {message}")
 
     print(f"Training table: {len(table)} rows, {len(table.columns)} columns")
     print(f"Counties: {table['fips_code'].nunique()}, issue_times: {table['issue_time'].nunique()}")

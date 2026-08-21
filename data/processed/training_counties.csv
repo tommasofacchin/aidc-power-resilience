@@ -1,0 +1,103 @@
+fips_code,county,state,region,activity_tier,total_customers
+19189,Winnebago,Iowa,Midwest,low,7213.0
+26057,Gratiot,Michigan,Midwest,low,21004.0
+26107,Mecosta,Michigan,Midwest,low,20608.0
+27065,Kanabec,Minnesota,Midwest,low,7031.0
+31079,Hall,Nebraska,Midwest,low,38623.0
+38079,Rolette,North Dakota,Midwest,low,7336.0
+46079,Lake,South Dakota,Midwest,low,8064.0
+46005,Beadle,South Dakota,Midwest,low,9787.0
+55139,Winnebago,Wisconsin,Midwest,low,74573.0
+19167,Sioux,Iowa,Midwest,mid,16993.0
+26063,Huron,Michigan,Midwest,mid,10545.0
+26117,Montcalm,Michigan,Midwest,mid,33946.0
+27049,Goodhue,Minnesota,Midwest,mid,13457.0
+31131,Otoe,Nebraska,Midwest,mid,9649.0
+38017,Cass,North Dakota,Midwest,mid,124603.0
+46103,Pennington,South Dakota,Midwest,mid,68130.0
+46083,Lincoln,South Dakota,Midwest,mid,31561.0
+55097,Portage,Wisconsin,Midwest,mid,27174.0
+19197,Wright,Iowa,Midwest,high,5538.0
+20209,Wyandotte,Kansas,Midwest,high,34391.0
+27021,Cass,Minnesota,Midwest,high,23771.0
+29091,Howell,Missouri,Midwest,high,23483.0
+38003,Barnes,North Dakota,Midwest,high,7694.0
+55029,Door,Wisconsin,Midwest,high,26534.0
+55041,Forest,Wisconsin,Midwest,high,6340.0
+23005,Cumberland,Maine,Northeast,low,227401.0
+33013,Merrimack,New Hampshire,Northeast,low,115899.0
+34007,Camden,New Jersey,Northeast,low,243254.0
+34017,Hudson,New Jersey,Northeast,low,299572.0
+42069,Lackawanna,Pennsylvania,Northeast,low,119979.0
+44001,Bristol,Rhode Island,Northeast,low,33839.0
+23029,Washington,Maine,Northeast,mid,15144.0
+23031,York,Maine,Northeast,mid,76996.0
+33009,Grafton,New Hampshire,Northeast,mid,49895.0
+36091,Saratoga,New York,Northeast,mid,117711.0
+42047,Elk,Pennsylvania,Northeast,mid,16981.0
+23021,Piscataquis,Maine,Northeast,high,10203.0
+23015,Lincoln,Maine,Northeast,high,23436.0
+34027,Morris,New Jersey,Northeast,high,112181.0
+50027,Windsor,Vermont,Northeast,high,38107.0
+05079,Lincoln,Arkansas,South,low,5681.0
+05113,Polk,Arkansas,South,low,11572.0
+10001,Kent,Delaware,South,low,98370.0
+11001,District of Columbia,District of Columbia,South,low,325122.0
+13275,Thomas,Georgia,South,low,36396.0
+28017,Chickasaw,Mississippi,South,low,11632.0
+28081,Lee,Mississippi,South,low,50449.0
+45021,Cherokee,South Carolina,South,low,39741.0
+48041,Brazos,Texas,South,low,73982.0
+48141,El Paso,Texas,South,low,349484.0
+51685,Manassas Park,Virginia,South,low,8015.0
+05015,Carroll,Arkansas,South,mid,17602.0
+05063,Independence,Arkansas,South,mid,19306.0
+10003,New Castle,Delaware,South,mid,191056.0
+12045,Gulf,Florida,South,mid,9722.0
+13107,Emanuel,Georgia,South,mid,12876.0
+37045,Cleveland,North Carolina,South,mid,18853.0
+37107,Lenoir,North Carolina,South,mid,15148.0
+47013,Campbell,Tennessee,South,mid,22286.0
+48025,Bee,Texas,South,mid,10187.0
+51033,Caroline,Virginia,South,mid,14714.0
+54037,Jefferson,West Virginia,South,mid,30664.0
+05125,Saline,Arkansas,South,high,49735.0
+05109,Pike,Arkansas,South,high,5133.0
+12059,Holmes,Florida,South,high,12700.0
+12065,Jefferson,Florida,South,high,7283.0
+21225,Union,Kentucky,South,high,6794.0
+37135,Orange,North Carolina,South,high,19163.0
+37071,Gaston,North Carolina,South,high,47215.0
+47011,Bradley,Tennessee,South,high,54499.0
+51057,Essex,Virginia,South,high,5226.0
+51105,Lee,Virginia,South,high,7474.0
+54029,Hancock,West Virginia,South,high,17028.0
+72097,Mayagüez,Puerto Rico,Territories,high,37395.0
+08087,Morgan,Colorado,West,low,14501.0
+16013,Blaine,Idaho,West,low,11965.0
+30047,Lake,Montana,West,low,24041.0
+35053,Socorro,New Mexico,West,low,9451.0
+35045,San Juan,New Mexico,West,low,60294.0
+41053,Polk,Oregon,West,low,31803.0
+49011,Davis,Utah,West,low,129095.0
+49005,Cache,Utah,West,low,49744.0
+08123,Weld,Colorado,West,mid,122323.0
+16011,Bingham,Idaho,West,mid,19837.0
+30049,Lewis and Clark,Montana,West,mid,32887.0
+35043,Sandoval,New Mexico,West,mid,60725.0
+35013,Doña Ana,New Mexico,West,mid,101930.0
+41007,Clatsop,Oregon,West,mid,23302.0
+49045,Tooele,Utah,West,mid,28885.0
+49057,Weber,Utah,West,mid,103528.0
+02122,Kenai Peninsula,Alaska,West,high,43315.0
+15001,Hawaii,Hawaii,West,high,87747.0
+15007,Kauai,Hawaii,West,high,34835.0
+16017,Bonner,Idaho,West,high,27216.0
+16049,Idaho,Idaho,West,high,9920.0
+32005,Douglas,Nevada,West,high,24125.0
+41013,Crook,Oregon,West,high,9093.0
+22071,Orleans,Louisiana,,,212936.0
+26097,Mackinac,Michigan,,,8757.0
+37119,Mecklenburg,North Carolina,,,28172.0
+72013,Arecibo,Puerto Rico,,,41122.0
+54005,Boone,West Virginia,,,13090.0

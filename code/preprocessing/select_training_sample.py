@@ -18,6 +18,8 @@ long tail).
 
 from __future__ import annotations
 
+import argparse
+
 from pathlib import Path
 
 import numpy as np
@@ -105,6 +107,26 @@ def stratified_sample(climatology: pd.DataFrame) -> pd.DataFrame:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Select the stratified training sample.")
+    parser.add_argument("--refresh", action="store_true",
+                        help="re-select and overwrite the pinned training_counties.csv")
+    args = parser.parse_args()
+
+    out_path = PROCESSED_DIR / "training_counties.csv"
+    # The sample this file names is the one the archived forecast set was downloaded
+    # for, so it is versioned and treated as an input, not regenerated on every run.
+    # Silently rewriting it desynchronises the sample from the weather cache, and the
+    # only symptom is a quietly smaller training set — that is exactly how a clean
+    # checkout trained on 59 of 102 counties with every step reporting success (see
+    # features/build_training_table.py). Overwriting is therefore opt-in.
+    if out_path.exists() and not args.refresh:
+        existing = pd.read_csv(out_path, dtype={"fips_code": str})
+        print(f"{out_path} already exists with {len(existing)} counties — kept as the "
+              f"pinned sample, which is what the archived forecast runs were downloaded "
+              f"for. Pass --refresh to re-select, and expect to download forecast runs "
+              f"for every county the new sample adds.")
+        raise SystemExit(0)
+
     climatology = pd.read_parquet(PROCESSED_DIR / "county_climatology_jan_aug_2025.parquet")
     sample = stratified_sample(climatology)
 
@@ -116,7 +138,6 @@ if __name__ == "__main__":
     print(f"\nStates represented: {sample['state'].nunique()}")
     print(f"5 reporting counties included: {FORCE_INCLUDE_FIPS.issubset(set(sample['fips_code']))}")
 
-    out_path = PROCESSED_DIR / "training_counties.csv"
     sample[["fips_code", "county", "state", "region", "activity_tier", "total_customers"]].to_csv(
         out_path, index=False
     )
