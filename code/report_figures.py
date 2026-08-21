@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from blend import LEAD_EDGES, apply_blend, bucket_of
+from blend import LEAD_EDGES, apply_blend, autumn_holdout, bucket_of
 from data_acquisition.eagle_i import PROCESSED_DIR
 from model_bundle import load_bundle
 from train import VAL_START, load_table, temporal_split
@@ -90,9 +90,12 @@ def plot_skill_curve(curve: pd.DataFrame, out_path: Path) -> None:
     for ax, (metric, title) in zip(axes, panels):
         floor = curve[curve.model == "always zero"].set_index("bucket").loc[labels, metric]
         ax.axhline(0, color=REFERENCE_INK, lw=1.1, ls=(0, (4, 3)), zorder=2)
+        # Below the zero line at the left end. The right end is where every series label
+        # sits, and above the line at the left is where the model curve runs — this
+        # caption collided with one or the other in both of the previous placements.
         ax.annotate(
-            "always-zero baseline", (x[-1], 0), textcoords="offset points", xytext=(0, 4),
-            fontsize=7, color=REFERENCE_INK, ha="right", va="bottom",
+            "always-zero baseline", (x[0], 0), textcoords="offset points", xytext=(0, -5),
+            fontsize=7, color=REFERENCE_INK, ha="left", va="top",
         )
 
         ends = []
@@ -138,14 +141,28 @@ def plot_skill_curve(curve: pd.DataFrame, out_path: Path) -> None:
     print(f"Wrote {out_path}")
 
 
-def main() -> None:
-    df = load_table(TABLE_PATH)
+def reference_split(df: pd.DataFrame):
+    """The deployed bundle over the post-VAL_START rows — the report's default panel."""
     _, val_df = temporal_split(df, VAL_START)
-
     bundle = load_bundle(BUNDLE_DIR)
     X = val_df[bundle.feature_names].copy()
     X["fips_code"] = bundle.encode_fips(X["fips_code"])
-    model_pred = np.clip(bundle.booster.predict(X), 0, 1)
+    return val_df, np.clip(bundle.booster.predict(X), 0, 1)
+
+
+def main(season: str = "reference") -> None:
+    df = load_table(TABLE_PATH)
+    if season == "autumn":
+        # Same out-of-sample autumn evaluation the blend weights are fitted on, so the
+        # figure and the weights can never tell different stories about the same window.
+        val_df, model_pred, label = autumn_holdout(df)
+        fig_path = FIG_DIR / "skill_by_lead_autumn.png"
+        csv_path = PROCESSED_DIR / "report_skill_by_lead_autumn.csv"
+        print(f"Autumn panel: {label}")
+    else:
+        val_df, model_pred = reference_split(df)
+        fig_path = FIG_DIR / "skill_by_lead.png"
+        csv_path = PROCESSED_DIR / "report_skill_by_lead.csv"
 
     weights = json.loads((BUNDLE_DIR / "blend_weights.json").read_text(encoding="utf8"))
     persistence = val_df["x_at_issue"].to_numpy()
@@ -166,13 +183,22 @@ def main() -> None:
           f"({100 * (~usable).mean():.2f}% dropped: no EAGLE-I reading at issue_time)")
 
     curve = skill_by_lead(val_df, preds)
-    curve.to_csv(PROCESSED_DIR / "report_skill_by_lead.csv", index=False)
+    curve.to_csv(csv_path, index=False)
     print(curve.pivot(index="bucket", columns="model", values="rmse").to_string())
     print()
     print(curve.pivot(index="bucket", columns="model", values="mae_events").to_string())
 
-    plot_skill_curve(curve, FIG_DIR / "skill_by_lead.png")
+    plot_skill_curve(curve, fig_path)
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Regenerate the report figures.")
+    parser.add_argument(
+        "--season", choices=["reference", "autumn"], default="reference",
+        help="'reference' is the May-onward split every other table uses; 'autumn' is "
+             "the seasonally-matched out-of-sample window (see blend.py).",
+    )
+    args = parser.parse_args()
+    main(season=args.season)

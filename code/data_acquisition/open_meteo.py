@@ -73,6 +73,47 @@ class RateLimitError(Exception):
             self.scope = "unknown"
 
 
+class TransientResponseError(Exception):
+    """A non-429 response whose body is not the JSON this endpoint promises.
+
+    Seen once, on 21 Aug 2026, 91 minutes into a bulk download: the request came back
+    with a status the client treats as success and a body that would not parse, and the
+    unguarded `resp.json()` took the whole run down after 50 completed runs. Whatever
+    produces it (a gateway page, a truncated body, an undocumented way of signalling the
+    daily cap), it is not a permanent condition and it is not a rate limit, so callers
+    should retry rather than stop. `status_code` and `body` are carried on the exception
+    because the next occurrence needs to be diagnosable from a log rather than
+    reproduced.
+    """
+
+    def __init__(self, status_code: int, body: str, url: str):
+        self.status_code = status_code
+        self.body = (body or "").strip()[:200]
+        self.url = url
+        super().__init__(
+            f"HTTP {status_code} with an unparseable body: {self.body!r}"
+        )
+
+
+def _reason_of(resp) -> str:
+    """Rate-limit reason, tolerating a 429 that does not carry JSON either."""
+    try:
+        return resp.json().get("reason", "rate limited")
+    except ValueError:
+        return (resp.text or "").strip()[:200] or "rate limited"
+
+
+def _evict(url: str) -> None:
+    """Drop one URL from the response cache.
+
+    Needed because `allowable_codes=(200,)` below means a 200 carrying a broken body is
+    stored exactly like a good one. Left in place, every retry would replay the same
+    broken bytes from disk and never reach the server again — the failure would look
+    permanent when it is not.
+    """
+    _session.cache.delete(urls=[url])
+
+
 _session = requests_cache.CachedSession(
     str(CACHE_PATH),
     backend="sqlite",
@@ -122,9 +163,13 @@ def fetch_single_run(
 
     resp = _session.get(BASE_URL, params=params, timeout=90)
     if resp.status_code == 429:
-        raise RateLimitError(resp.json().get("reason", "rate limited"))
+        raise RateLimitError(_reason_of(resp))
     resp.raise_for_status()
-    payload = resp.json()
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        _evict(resp.url)
+        raise TransientResponseError(resp.status_code, resp.text, resp.url) from exc
 
     # Single-location requests return one object; multi-location returns a list.
     results = payload if isinstance(payload, list) else [payload]

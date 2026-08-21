@@ -51,7 +51,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from data_acquisition.county_coordinates import load_county_coordinates
-from data_acquisition.open_meteo import RateLimitError, fetch_single_run
+from data_acquisition.open_meteo import RateLimitError, TransientResponseError, fetch_single_run
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
@@ -70,6 +70,11 @@ DAY_STRIDE = 2  # every other day — see module docstring for why
 BATCH_SIZE = 110
 FORECAST_HOURS = 72
 MAX_RETRIES = 5
+# A malformed (non-JSON) response is neither a rate limit nor a permanent failure — see
+# open_meteo.TransientResponseError. One took a 50-run download out on 21 Aug; a handful
+# of spaced retries costs almost nothing and keeps an unattended run alive through it.
+MAX_TRANSIENT_RETRIES = 4
+TRANSIENT_RETRY_SLEEP_SECONDS = 30
 MINUTE_RETRY_SLEEP_SECONDS = 65
 HOUR_RETRY_SLEEP_SECONDS = 62 * 60  # a 65s sleep against an hourly cap just spins uselessly
 MAX_HOUR_RETRIES = 10  # generous ceiling (~10h) so an unattended overnight run survives
@@ -121,9 +126,18 @@ def fetch_with_retry(
     """
     minute_attempt = 0
     hour_attempt = 0
+    transient_attempt = 0
     while True:
         try:
             return fetch_single_run(locations, run_time, forecast_hours=forecast_hours)
+        except TransientResponseError as e:
+            transient_attempt += 1
+            if transient_attempt > MAX_TRANSIENT_RETRIES:
+                raise
+            print(f"    malformed response ({e}), attempt "
+                  f"{transient_attempt}/{MAX_TRANSIENT_RETRIES} — sleeping "
+                  f"{TRANSIENT_RETRY_SLEEP_SECONDS}s...")
+            time.sleep(TRANSIENT_RETRY_SLEEP_SECONDS)
         except RateLimitError as e:
             if e.scope == "day":
                 # Handled one level up, in main()'s outer loop: unlike the other two

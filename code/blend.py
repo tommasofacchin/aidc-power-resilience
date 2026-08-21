@@ -20,9 +20,31 @@ lead. At serving time those same features are only minutes old and highly inform
 but the model cannot know that: nothing in its input distinguishes the two situations.
 Persistence, which just carries x_at_issue forward, has no such confusion.
 
-Blending is the cheap correction. Fitting the weight per operational-lead bucket on the
+Blending is the cheap correction. Fitting the weight per operational-lead bucket on a
 held-out period, where issue_time does equal run_time and the two axes agree, is the
 closest honest proxy available for the serving-time behaviour.
+
+WHICH held-out period turned out to matter more than the blend itself. The weights were
+originally fitted on May-June 2025, the tail of the 2025 span, and came out at
+0.80/0.70/0.10/0.00/0.00 across the five lead buckets: persistence only for the shortest
+leads, model alone beyond a day. Refitting the identical procedure on the autumn 2024
+holdout (2024-09-01 .. 2024-11-30, seasonally matched to the Sep-Nov test window) gives
+0.90/0.80/0.75/0.65/0.50 — persistence is worth *more* at every lead, and still worth
+half the prediction two to three days out.
+
+The reason is physical, not statistical. Late-spring outages are short convective events
+that decay within hours, so yesterday's state says little about tomorrow. Autumn outages
+are storm-restoration events lasting days, so the current state stays informative across
+the whole 48-hour Task A horizon. Measured on that autumn holdout: model alone RMSE
+0.036917, spring-fitted weights 0.034361 (-6.9%), autumn-fitted weights 0.028579
+(-22.6%). The same autumn weights cost about 2% RMSE back on the May-June window — a
+season the submission is never scored in. `--season autumn` is therefore the default.
+
+Caveat worth stating in the report: autumn 2024 contains Helene and Milton, so the
+weights are fitted on a window with two major landfalling systems. They would be too
+persistence-heavy for an unusually quiet autumn. The downside is bounded, though —
+during calm periods x_at_issue is ~0, so a heavy persistence weight shrinks predictions
+toward zero, which is the direction this target rewards anyway.
 """
 
 from __future__ import annotations
@@ -31,17 +53,23 @@ import json
 import sys
 from pathlib import Path
 
+import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from data_acquisition.eagle_i import PROCESSED_DIR
 from model_bundle import load_bundle
-from train import NON_FEATURE_COLS, VAL_START, load_table, temporal_split
+from train import LGBM_PARAMS, NON_FEATURE_COLS, VAL_START, load_table, temporal_split
 
 BUNDLE_DIR = PROCESSED_DIR / "model_bundle"
 WEIGHTS_PATH = BUNDLE_DIR / "blend_weights.json"
 TABLE_PATH = PROCESSED_DIR / "training_table_partial.parquet"
+
+# The autumn block the seasonal fit uses. Sep-Nov 2024 is the only stretch of the IFS
+# archive that is seasonally matched to the Sep-Nov 2025 test window.
+AUTUMN_START = pd.Timestamp("2024-09-01")
+AUTUMN_END = pd.Timestamp("2024-12-01")
 
 # Upper edges, in operational lead hours. The first covers everything Task B ever asks
 # for (0.25-6h); the rest track Task A across its 48-hour horizon.
@@ -97,17 +125,57 @@ def apply_blend(
     return np.clip(out, 0, 1)
 
 
-def main() -> None:
-    df = load_table(TABLE_PATH)
-    train_df, val_df = temporal_split(df, VAL_START)
-    bundle = load_bundle(BUNDLE_DIR)
+def autumn_holdout(df: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray, str]:
+    """Out-of-sample autumn evaluation: train on 2025, predict Sep-Nov 2024.
 
+    Why not just run the deployed bundle over the autumn rows: it was trained on them.
+    Its autumn predictions are in-sample, would look far better than they will in the
+    real test window, and the weights fitted against them would understate how much
+    persistence is worth — the exact quantity this is trying to measure. So the model
+    used here is retrained from scratch on 2025 alone. It is used only to fit the
+    weights; the submitted predictions still come from the full bundle.
+
+    The feature set is deliberately the deployed one, climatology features included,
+    even though their quantiles were fitted on a window that overlaps this evaluation
+    (see seasonal_holdout.py). That leak flatters the model, i.e. it biases the fitted
+    weights *away* from persistence — against the conclusion this measurement reaches.
+    A result that survives a bias pointing the other way needs no correction for it.
+    """
+    train_df = df[df["issue_time"] >= AUTUMN_END]
+    val_df = df[(df["issue_time"] >= AUTUMN_START) & (df["issue_time"] < AUTUMN_END)]
+    if val_df.empty:
+        raise ValueError(
+            f"No rows with issue_time in [{AUTUMN_START.date()}, {AUTUMN_END.date()}); "
+            f"the table spans {df['issue_time'].min()} .. {df['issue_time'].max()}. "
+            f"Rebuild it with `--years 2024 2025` first."
+        )
+    feature_cols = [c for c in df.columns if c not in NON_FEATURE_COLS]
+    model = lgb.LGBMRegressor(**LGBM_PARAMS, verbose=-1)
+    model.fit(train_df[feature_cols], train_df["target_x"], categorical_feature=["fips_code"])
+    pred = np.clip(model.predict(val_df[feature_cols]), 0, 1)
+    label = (f"{len(val_df):,} out-of-sample autumn rows "
+             f"({AUTUMN_START.date()} .. {(AUTUMN_END - pd.Timedelta(days=1)).date()}, "
+             f"model retrained on {len(train_df):,} rows of 2025)")
+    return val_df, pred, label
+
+
+def reference_holdout(df: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray, str]:
+    """The original fit: the deployed bundle over the post-VAL_START rows."""
+    _, val_df = temporal_split(df, VAL_START)
+    bundle = load_bundle(BUNDLE_DIR)
     X = val_df[bundle.feature_names].copy()
     X["fips_code"] = bundle.encode_fips(X["fips_code"])
-    model_pred = np.clip(bundle.booster.predict(X), 0, 1)
+    pred = np.clip(bundle.booster.predict(X), 0, 1)
+    return val_df, pred, f"{len(val_df):,} held-out rows (split {VAL_START.date()})"
 
-    print(f"Fitting blend weights on {len(val_df):,} held-out rows "
-          f"(split {VAL_START.date()}), by operational lead:")
+
+def main(season: str = "autumn") -> None:
+    df = load_table(TABLE_PATH)
+    val_df, model_pred, label = (
+        autumn_holdout(df) if season == "autumn" else reference_holdout(df)
+    )
+
+    print(f"Fitting blend weights on {label}, by operational lead:")
     weights = fit_weights(val_df, model_pred)
 
     truth = val_df["target_x"].to_numpy()
@@ -127,4 +195,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Fit the model/persistence blend.")
+    parser.add_argument(
+        "--season", choices=["autumn", "reference"], default="autumn",
+        help="'autumn' (default) fits on an out-of-sample Sep-Nov 2024 evaluation, the "
+             "season the submission is actually scored in; 'reference' reproduces the "
+             "original May-Jun 2025 fit.",
+    )
+    args = parser.parse_args()
+    main(season=args.season)

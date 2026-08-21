@@ -70,6 +70,11 @@ FIGSHARE_YEAR_FILES = {
 CANONICAL_COLUMNS = ["fips_code", "county", "state", "customers_out", "run_start_time"]
 _COLUMN_ALIASES = {"sum": "customers_out"}
 
+# Rows per read chunk in load_outage_events. Only relevant to peak memory, not to the
+# result: 5M rows of these five columns is a few hundred MB, small enough that two
+# annual files can be read back to back inside 16 GB.
+READ_CHUNK_ROWS = 5_000_000
+
 _YEAR_FILE_RE = re.compile(r"eaglei_outages_(\d{4})\.csv$", re.IGNORECASE)
 
 
@@ -126,7 +131,9 @@ def discover_local_year_files() -> dict[int, Path]:
     return found
 
 
-def load_outage_events(years: list[int] | None = None) -> pd.DataFrame:
+def load_outage_events(
+    years: list[int] | None = None, fips_codes: set[str] | None = None
+) -> pd.DataFrame:
     """Load raw outage event rows (fips_code, county, state, customers_out, run_start_time).
 
     Per-year header drift is normalised to CANONICAL_COLUMNS before concatenation — see
@@ -136,6 +143,14 @@ def load_outage_events(years: list[int] | None = None) -> pd.DataFrame:
     county at that 15-minute timestamp. Building the dense zero-filled grid needed for
     the `x` target is preprocessing's job, not this loader's (see
     code/preprocessing/build_target_grid.py).
+
+    `fips_codes` restricts the result to those counties, applied chunk by chunk *during*
+    the read rather than after it. This is a memory constraint, not an optimisation:
+    each annual file is ~30M rows, and the training table needs two of them at once
+    while only 102 of the ~3,050 covered counties are ever used — holding both years
+    whole first exhausts RAM on a 16 GB machine and dies mid-build. Filtering as we read
+    keeps the peak proportional to one chunk plus the ~3% that survives. Leave it None
+    (the default) for the whole-population scans that county selection needs.
     """
     year_files = discover_local_year_files()
     if years is not None:
@@ -151,27 +166,34 @@ def load_outage_events(years: list[int] | None = None) -> pd.DataFrame:
 
     frames = []
     for year, path in sorted(year_files.items()):
-        df = pd.read_csv(
+        chunks = []
+        for chunk in pd.read_csv(
             path,
             dtype={"fips_code": str, "county": str, "state": str},
             parse_dates=["run_start_time"],
-        )
-        df = df.rename(columns=_COLUMN_ALIASES)
-        absent = [c for c in CANONICAL_COLUMNS if c not in df.columns]
-        if absent:
-            raise ValueError(
-                f"{path.name} is missing column(s) {absent} after alias normalisation; "
-                f"its header is {list(df.columns)}. EAGLE-I has renamed a column again "
-                f"— extend _COLUMN_ALIASES rather than letting the concat below quietly "
-                f"produce an all-NaN year."
-            )
-        df["fips_code"] = df["fips_code"].str.zfill(5)
-        # 2024's extra total_customers column is dropped on purpose: it exists for that
-        # one year only, so keeping it would inject a mostly-NaN denominator into the
-        # concatenated frame, and it disagrees with MCC.csv by ~20% anyway (Autauga
-        # 01001: 29,666 vs 24,619). load_total_customers() stays the single source
-        # of the denominator; see PLAN.md for the open question of which one scores.
-        frames.append(df[CANONICAL_COLUMNS])
+            chunksize=READ_CHUNK_ROWS,
+        ):
+            chunk = chunk.rename(columns=_COLUMN_ALIASES)
+            absent = [c for c in CANONICAL_COLUMNS if c not in chunk.columns]
+            if absent:
+                raise ValueError(
+                    f"{path.name} is missing column(s) {absent} after alias normalisation; "
+                    f"its header is {list(chunk.columns)}. EAGLE-I has renamed a column "
+                    f"again — extend _COLUMN_ALIASES rather than letting the concat below "
+                    f"quietly produce an all-NaN year."
+                )
+            chunk["fips_code"] = chunk["fips_code"].str.zfill(5)
+            # Selecting CANONICAL_COLUMNS also drops 2024's extra total_customers
+            # column, on purpose: it exists for that one year only, so keeping it would
+            # inject a mostly-NaN denominator into the concatenated frame, and it
+            # disagrees with MCC.csv by ~20% anyway (Autauga 01001: 29,666 vs 24,619).
+            # load_total_customers() stays the single source of the denominator; see
+            # PLAN.md for the open question of which one scores.
+            chunk = chunk[CANONICAL_COLUMNS]
+            if fips_codes is not None:
+                chunk = chunk[chunk["fips_code"].isin(fips_codes)]
+            chunks.append(chunk)
+        frames.append(pd.concat(chunks, ignore_index=True))
     if not frames:
         raise FileNotFoundError(
             f"No eaglei_outages_<year>.csv files found in {RAW_DIR}. "

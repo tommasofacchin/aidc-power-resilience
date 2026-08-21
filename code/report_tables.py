@@ -35,8 +35,7 @@ def main() -> None:
     counties = pd.read_csv(PROCESSED_DIR / "selected_counties.csv", dtype={"fips_code": str})
     fips_codes = counties["fips_code"].tolist()
 
-    events = load_outage_events(years=[2025])
-    events = events[events["fips_code"].isin(fips_codes)]
+    events = load_outage_events(years=[2025], fips_codes=set(fips_codes))
     grid = build_dense_grid(
         events, load_total_customers(), fips_codes=fips_codes,
         start=WINDOW_START, end=WINDOW_END - pd.Timedelta(minutes=15),

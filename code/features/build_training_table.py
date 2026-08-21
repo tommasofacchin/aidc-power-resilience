@@ -77,8 +77,7 @@ def build_training_table(
     # is tz-naive throughout.
     weather["target_time"] = weather["target_time"].dt.tz_localize(None)
 
-    events = load_outage_events(years=years)
-    events = events[events["fips_code"].isin(fips_codes)]
+    events = load_outage_events(years=years, fips_codes=set(fips_codes))
     mcc = load_total_customers()
 
     grid_start = weather["issue_time"].min() - pd.Timedelta(hours=24)  # margin for 24h lookback

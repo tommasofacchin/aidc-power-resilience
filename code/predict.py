@@ -188,7 +188,7 @@ def build_autoregressive_for_issue(
 def generate_predictions(schedule: pd.DataFrame, bundle: ModelBundle) -> pd.DataFrame:
     counties = load_reporting_counties()
     fips_codes = counties["fips_code"].tolist()
-    events = load_outage_events(years=[2025])
+    events = load_outage_events(years=[2025], fips_codes=set(fips_codes))
     mcc = load_total_customers()
 
     # Absent weights mean "model only" — an explicit, reportable state, unlike a stale
