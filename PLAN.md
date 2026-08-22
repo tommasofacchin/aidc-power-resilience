@@ -374,3 +374,107 @@ Codice:
 - Dataset NaFIRS (UK)
 
 Tutto questo torna in **Phase 2**, quando gli organizzatori pubblicheranno il dataset delle topologie e il design di scoring relativo.
+
+---
+
+# Piano 23–30 agosto (scadenza prorogata al 30)
+
+Scritto il 22 agosto, dopo che la traccia "fix sicuri" è stata chiusa e verificata
+(riproduzione da clone pulito identica bit-a-bit, `3f81222`). La submission attuale è
+valida e committata: **tutto ciò che segue è miglioramento su un fallback solido**, e
+ogni passo può essere abbandonato senza perdere la consegna.
+
+## Il vincolo che governa tutto
+
+Open-Meteo ha **una sola quota giornaliera condivisa tra tutti gli endpoint** — archive
+(ERA5) e Single Runs attingono allo stesso contatore. Verificato il 22 agosto: tre sonde
+ERA5 hanno esaurito il budget e il canale Single Runs ha risposto 429 subito dopo.
+
+Conseguenza pratica: **ERA5 è fuori**. Costa molto di più per unità di dato utile (il
+costo scala con l'ampiezza dell'intervallo di date) e avrebbe in più lo skew train/serve.
+Il canale Single Runs rende ~110–130 chiamate/giorno, ognuna delle quali copre 102 contee
+× 62 ore × 14 variabili, e usa la stessa fonte che serve le predizioni: nessuno skew.
+
+## Perché densificare: già misurato, non ipotizzato
+
+`code/densification_probe.py` è una cross-validation temporale a 3 fold su settembre,
+ottobre e novembre 2024, con il set di valutazione **congelato** a
+`data/processed/baseline_runs_20260822.json` — così i run scaricati dopo non possono
+entrare in ciò che viene misurato, e il confronto prima/dopo resta onesto.
+
+Simulando la densificazione con i dati già presenti (49 run autunnali contro 98):
+
+| fold | Δ RMSE sistema completo |
+|---|---|
+| 2024-09 (Helene) | +0,71 % |
+| 2024-10 (Milton) | +1,05 % |
+| 2024-11 (calmo)  | −0,15 % |
+| **aggregato, 354.858 righe** | **+0,70 % RMSE, +2,17 % MAE eventi** |
+
+I mesi di tempesta guadagnano, il mese calmo è neutro — e ha un RMSE 7× più piccolo,
+quindi pesa poco in qualunque aggregato. La finestra di test è proprio settembre–novembre.
+
+## Le lacune, contate
+
+| Blocco | Presenti | Mancanti | Priorità |
+|---|---|---|---|
+| Autunno 2024, griglia 00/12Z | 98/182 | **84** | 1 |
+| Dicembre 2024 | 0/62 | **62** | 2 — mese oggi del tutto assente |
+| Autunno 2024 a 4 cicli (00/06/12/18Z) | 98/364 | 266 | 3 — solo se 06/18Z esistono |
+| Gen–ago 2025 | 144/486 | 342 | 4 — stagione sbagliata |
+
+## Esecuzione
+
+**23 ago — scaricare (una riga, poi lasciar stare).** Assorbe da sé tutte e tre le quote
+e attraversa il tetto giornaliero aspettando: si avvia una volta e si lascia andare anche
+per più giorni. 146 chiamate nuove.
+
+    python code/data_acquisition/bulk_download_training_weather.py \
+        --start 2024-09-01 --end 2024-12-31 --day-stride 1 --budget 200
+
+Aggiungere `--dry-run` per vedere prima cosa farebbe, senza spendere una chiamata.
+
+**24 ago — go/no-go.** Ricostruire la tabella e misurare:
+
+    python code/features/build_training_table.py --years 2024 2025
+    python code/densification_probe.py
+
+Se stampa NO-GO, fermarsi: la quota residua rende di più altrove (vedi *Se avanza*).
+
+**25 ago — rigenerare, solo se GO.**
+
+    python code/train.py
+    python code/blend.py --season autumn
+    python code/predict.py
+    python code/validate_submission.py submission/predictions.csv
+    python code/ablation.py && python code/seasonal_holdout.py
+    python code/report_figures.py --season autumn
+    python code/report_figures.py --season reference
+    python code/report_tables.py
+
+Poi aggiornare i numeri citati nel report e ricostruire il PDF. **Attenzione al limite di
+8 pagine**: il report è esattamente al massimo, quindi ogni aggiunta va compensata.
+
+**28–29 ago — chiusura.** Ri-eseguire il test di riproducibilità da clone pulito (deve
+tornare identico bit-a-bit) e consegnare il 29, tenendo il 30 come margine.
+
+## Se avanza quota e tempo
+
+1. **Cicli 06/18Z.** Non è noto se l'archivio IFS HRES li esponga su questo endpoint.
+   Sondare *una* chiamata prima di impegnare un budget:
+   `--run-hours 6 --start 2024-09-01 --end 2024-09-01 --budget 1`.
+   Se ci sono, l'autunno a 4 cicli vale 266 chiamate (~2,5 giorni).
+2. **Sostituzione di Mecklenburg** (93 chiamate). Chiude l'unica debolezza che il report
+   dichiara su di sé. Richiede anche di riscrivere la sezione 2 e di dare copertura di
+   training alla contea sostitutiva (~92 chiamate in più).
+3. **Meteo più fresco per Task B** (~91 chiamate). Oggi Task B consuma una previsione
+   vecchia 12–30 h per prevedere 15 minuti avanti; `task_b_run_time()` lo dice e lo
+   definisce una modifica di una riga.
+
+## Cosa NON fare
+
+- **ERA5**: stessa quota, costo molto più alto, in più skew train/serve.
+- **Refit finale su tutti i dati**: aggiungerebbe maggio–agosto, la stagione meno simile
+  al test, e non è validabile — l'unico autunno disponibile è già in training.
+- **Passare all'hurdle**: misurato, dopo il blend i tre modelli stanno in 3 parti su
+  10.000. Non vale il secondo modello da servire.

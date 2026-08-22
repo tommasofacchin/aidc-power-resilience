@@ -11,6 +11,9 @@ data/*
 !data/processed/
 data/processed/*
 !data/processed/training_counties.csv
+# The frozen run list densification_probe.py measures against. Once runs are added it
+# cannot be regenerated, and without it the before/after comparison has no baseline.
+!data/processed/baseline_runs_20260822.json
 outputs/
 *.parquet
 *.feather

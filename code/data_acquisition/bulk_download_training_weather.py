@@ -165,7 +165,8 @@ def run_output_path(run_time: pd.Timestamp) -> Path:
     return WEATHER_DIR / f"run_{run_time.strftime('%Y%m%dT%H%M')}.parquet"
 
 
-def main(start=TRAIN_START, end=TRAIN_END, day_stride=DAY_STRIDE, budget=ADDITIONAL_RUN_BUDGET):
+def main(start=TRAIN_START, end=TRAIN_END, day_stride=DAY_STRIDE,
+         budget=ADDITIONAL_RUN_BUDGET, run_hours=None, dry_run=False):
     """Fetch IFS runs for the training counties over [start, end].
 
     The window is a parameter rather than only the module constants because the model
@@ -176,15 +177,16 @@ def main(start=TRAIN_START, end=TRAIN_END, day_stride=DAY_STRIDE, budget=ADDITIO
     to 2024-03-14, so they are available. Defaults reproduce the original 2025 pass.
     """
     WEATHER_DIR.mkdir(parents=True, exist_ok=True)
+    run_hours = list(RUN_HOURS if run_hours is None else run_hours)
     locations = load_training_locations()
     print(f"Training locations: {len(locations)}")
     print(f"Window: {pd.Timestamp(start).date()} .. {pd.Timestamp(end).date()} "
-          f"(stride {day_stride}d, runs at {RUN_HOURS}Z, budget {budget})")
+          f"(stride {day_stride}d, runs at {run_hours}Z, budget {budget})")
 
     full_schedule = [
         pd.Timestamp(d) + pd.Timedelta(hours=h)
         for d in pd.date_range(start, end, freq="D")[::day_stride]
-        for h in RUN_HOURS
+        for h in run_hours
     ]
     already_done = [rt for rt in full_schedule if run_output_path(rt).exists()]
     still_needed = [rt for rt in full_schedule if not run_output_path(rt).exists()]
@@ -205,6 +207,16 @@ def main(start=TRAIN_START, end=TRAIN_END, day_stride=DAY_STRIDE, budget=ADDITIO
               f"-> {len(run_times)} total this pass.")
 
     print(f"Runs to fetch: {len(run_times)} ({run_times[0]} .. {run_times[-1]})")
+    if dry_run:
+        # Counts only what is missing: what this pass would actually spend quota on.
+        missing = [rt for rt in run_times if not run_output_path(rt).exists()]
+        print(f"DRY RUN: {len(missing)} new calls would be made, "
+              f"{len(run_times) - len(missing)} already on disk.")
+        for rt in missing[:10]:
+            print(f"    would fetch {rt}")
+        if len(missing) > 10:
+            print(f"    ... and {len(missing) - 10} more")
+        return
 
     batches = [locations.iloc[i : i + BATCH_SIZE] for i in range(0, len(locations), BATCH_SIZE)]
     print(f"Batches per run: {len(batches)} (batch size {BATCH_SIZE})")
@@ -264,7 +276,14 @@ if __name__ == "__main__":
     parser.add_argument("--day-stride", type=int, default=DAY_STRIDE)
     parser.add_argument("--budget", type=int, default=ADDITIONAL_RUN_BUDGET,
                         help="max NEW runs to fetch this pass (quota guard)")
+    parser.add_argument("--run-hours", type=int, nargs="+", default=None,
+                        help=f"IFS initialisation hours to fetch (default {RUN_HOURS}). "
+                             f"06 and 18 are not known to be archived for IFS HRES on this "
+                             f"endpoint — probe one before spending a budget on them.")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="report what would be fetched, make no API calls")
     args = parser.parse_args()
 
     main(start=pd.Timestamp(args.start), end=pd.Timestamp(args.end),
-         day_stride=args.day_stride, budget=args.budget)
+         day_stride=args.day_stride, budget=args.budget,
+         run_hours=args.run_hours, dry_run=args.dry_run)

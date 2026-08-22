@@ -99,7 +99,8 @@ def bucket_of(lead_hours: pd.Series) -> pd.Series:
     return pd.cut(lead_hours, bins=[0] + LEAD_EDGES, right=True)
 
 
-def fit_weights(val_df: pd.DataFrame, model_pred: np.ndarray) -> dict[str, dict]:
+def fit_weights(val_df: pd.DataFrame, model_pred: np.ndarray,
+                quiet: bool = False) -> dict[str, dict]:
     """Per-bucket persistence weight and decay half-life that minimise RMSE.
 
     RMSE rather than MAE: on a target that is 71.6% exact zeros, MAE is minimised by
@@ -143,6 +144,8 @@ def fit_weights(val_df: pd.DataFrame, model_pred: np.ndarray) -> dict[str, dict]
 
         weights[str(b)] = {"w_persistence": best_w, "halflife_h": best_hl}
         halflife_label = "flat" if best_hl is None else f"{best_hl}h"
+        if quiet:
+            continue
         print(f"  {str(b):<12} n={sel.sum():>7,}  w_persistence={best_w:.2f} "
               f"halflife={halflife_label:>5}  RMSE model {model_only:.6f} -> "
               f"flat blend {flat_best:.6f} -> decayed blend {best_rmse:.6f}")
