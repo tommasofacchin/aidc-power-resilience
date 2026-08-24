@@ -434,26 +434,51 @@ per più giorni. 146 chiamate nuove.
 
 Aggiungere `--dry-run` per vedere prima cosa farebbe, senza spendere una chiamata.
 
-**24 ago — go/no-go.** Ricostruire la tabella e misurare:
+**23 ago — fatto.** Il download è finito da solo alle 04:43 del 23: 244/244 run,
+attraversando una volta il tetto orario e una volta quello giornaliero. Autunno 2024
+completo sulla griglia 00/12Z (182/182) e dicembre 2024 da 0 a 62.
+
+**24 ago — go/no-go: ha stampato NO-GO, e va letto per quello che misura.**
 
     python code/features/build_training_table.py --years 2024 2025
     python code/densification_probe.py
 
-Se stampa NO-GO, fermarsi: la quota residua rende di più altrove (vedi *Se avanza*).
+Esito su 709.716 righe congelate: **+0,35 % RMSE, +1,54 % MAE eventi** in aggregato —
+sotto la soglia di 0,5 % registrata in anticipo. Per fold: settembre +0,13 %, ottobre
+**+4,79 %**, novembre +0,05 %. L'aggregato è più basso della simulazione (+0,70 %) perché
+settembre domina l'RMSE ed è il mese che non si è mosso: Helene era già ben coperta.
 
-**25 ago — rigenerare, solo se GO.**
+Il NO-GO risponde a *«vale la pena spendere altra quota per scaricare ancora?»*, e la
+risposta è no. Non risponde a *«uso i run che ho già su disco?»*: B non è mai peggio di A
+in nessun fold e i run sono già pagati. **Decisione presa: rigenerare, senza spendere
+altra quota.**
+
+**24 ago — rigenerato.** Sequenza eseguita, in quest'ordine:
 
     python code/train.py
     python code/blend.py --season autumn
-    python code/predict.py
+    python code/predict.py                    # 0 chiamate API: tutti i run erano in cache
     python code/validate_submission.py submission/predictions.csv
     python code/ablation.py && python code/seasonal_holdout.py
     python code/report_figures.py --season autumn
     python code/report_figures.py --season reference
     python code/report_tables.py
+    python code/report_numbers.py             # nuovo: ricalcola i numeri citati nel report
 
-Poi aggiornare i numeri citati nel report e ricostruire il PDF. **Attenzione al limite di
-8 pagine**: il report è esattamente al massimo, quindi ogni aggiunta va compensata.
+`report_numbers.py` esiste perché i numeri del report venivano da cinque script diversi
+più una manciata che nessuno script possedeva (la Tabella 4 fra stagioni, le quote di
+split gain, il peso di persistenza effettivo sulle righe consegnate): proprio quelli che
+diventano stantii in silenzio quando la tabella cresce. Ora hanno un proprietario.
+
+Il PDF è stato ricostruito e resta a **8 pagine**, dentro il limite 3–8.
+
+Cosa è cambiato nel report, oltre alle cifre: le ablation si sono ridotte e alcune hanno
+cambiato segno (solo stato autoregressivo +0,30 % e meteo derivato +0,12 % restano
+positive); lo split gain si è rovesciato — l'identità di contea scende dal 43 % al 19 %,
+`x_at_issue` sale dal 5,7 % al 22,5 %; il fit del blend ora sceglie un decay in quattro
+bucket su cinque invece di uno, ma vale lo 0,06 % complessivo. Tre numeri erano già
+stantii prima di oggi (la didascalia della Figura 1, la p95 di Orleans, il confronto dello
+stump): corretti.
 
 **28–29 ago — chiusura.** Ri-eseguire il test di riproducibilità da clone pulito (deve
 tornare identico bit-a-bit) e consegnare il 29, tenendo il 30 come margine.
@@ -467,9 +492,13 @@ tornare identico bit-a-bit) e consegnare il 29, tenendo il 30 come margine.
 2. **Sostituzione di Mecklenburg** (93 chiamate). Chiude l'unica debolezza che il report
    dichiara su di sé. Richiede anche di riscrivere la sezione 2 e di dare copertura di
    training alla contea sostitutiva (~92 chiamate in più).
-3. **Meteo più fresco per Task B** (~91 chiamate). Oggi Task B consuma una previsione
-   vecchia 12–30 h per prevedere 15 minuti avanti; `task_b_run_time()` lo dice e lo
-   definisce una modifica di una riga.
+3. **Meteo più fresco per Task B** (~91 chiamate). ~~Oggi Task B consuma una previsione
+   vecchia 12–30 h per prevedere 15 minuti avanti.~~ **Scartato il 24 agosto, con i dati
+   alla mano:** in `report_skill_by_lead_autumn.csv` a lead (0, 6] il blended coincide
+   esattamente con la persistenza (RMSE 0,010506 entrambi) mentre il modello da solo fa
+   0,032824. Nel bucket dove vive tutto Task B il blend dà peso 1,00 alla persistenza:
+   una previsione meteo più fresca non ha spazio per pagare. Le 91 chiamate rendono di
+   più altrove, o non si spendono.
 
 ## Cosa NON fare
 

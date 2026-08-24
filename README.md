@@ -130,6 +130,7 @@ python code/seasonal_holdout.py                  # -> data/processed/seasonal_ho
 python code/report_figures.py --season autumn    # -> report/figures/skill_by_lead_autumn.png
 python code/report_figures.py --season reference # -> report/figures/skill_by_lead.png
 python code/report_tables.py                     # -> data/processed/report_county_profile.csv
+python code/report_numbers.py                    # -> data/processed/report_numbers.md (run last)
 ```
 
 The report embeds the autumn figure; the reference-season one is kept because the two
@@ -145,15 +146,18 @@ chrome --headless=new --disable-gpu --no-pdf-header-footer \
 # Windows: "C:\Program Files\Google\Chrome\Application\chrome.exe" (msedge.exe also works)
 ```
 
-The HTML is hand-maintained prose, but every figure and every quoted number in it comes
-from the three scripts above, so a figure cannot silently disagree with the table beside
-it. The result is 8 pages, against the guidelines' 3–8 limit.
+The HTML is hand-maintained prose, but every figure and every quoted number in it comes from
+the scripts above. `report_numbers.py` is the one to run last and read against the report: it
+recomputes every figure the prose quotes, including the handful — Table 4's cross-season blend
+comparison, the split-gain shares, the effective persistence weight over the submitted rows —
+that no other script owns and that therefore go stale silently when the training table grows.
+The result is 8 pages, against the guidelines' 3–8 limit.
 
 ## 4. Expected runtime
 
 Wall clock on the reference machine (16 logical cores, 15 GB RAM), single run, warm cache where the
-step has one. Steps 7–11 were timed on 21 August 2026; steps 1–5 are from the runs that
-originally produced their outputs, so treat them as approximate.
+step has one. Steps 7–11 were re-timed on 24 August 2026 against the densified table; steps
+1–5 are from the runs that originally produced their outputs, so treat them as approximate.
 
 | Step | Cold | Warm (cached) | Note |
 |---|---|---|---|
@@ -163,13 +167,13 @@ originally produced their outputs, so treat them as approximate.
 | 4. Select 5 counties | ~45 s | ~45 s | full scan of the 2025 annual file |
 | 5. Training sample | ~2 s | ~2 s | keeps the versioned sample; `--refresh` re-selects |
 | 6. Weather download | **days** | instant | quota-bound, not bandwidth-bound — see section 2 |
-| 7. Build training table | ~1.5 min | — | 242 runs × 102 counties → 1.75 M rows |
-| 8. Train | ~17 s | — | LightGBM, CPU, 1.24 M training rows |
-| 9. Blend fit | ~20 s | — | weight × decay half-life grid, per lead bucket |
+| 7. Build training table | ~1.8 min | — | 388 runs × 102 counties → 2.80 M rows |
+| 8. Train | ~27 s | — | LightGBM, CPU, 2.30 M training rows |
+| 9. Blend fit | ~36 s | — | weight × decay half-life grid, per lead bucket |
 | 10. Generate submission | ~8 min | ~8 min | 93 IFS runs, all cache hits after the first pass |
 | 11. Validate | ~1 s | — | |
 
-**End to end from a clean checkout: about 13 minutes of compute for steps 3–11, plus the
+**End to end from a clean checkout: about 15 minutes of compute for steps 3–11, plus the
 one-off downloads and however many days the weather quota takes.** A reproducer who only
 wants to re-derive the model from an existing `data/` directory needs steps 7–11, about
 10 minutes.
@@ -178,10 +182,16 @@ wants to re-derive the model from an existing `data/` directory needs steps 7–
 directory, a fresh virtualenv was built from `code/requirements.txt`, `data/raw` was supplied
 from the existing archive (steps 1, 2 and 6 are downloads, and step 6 is quota-bound over
 days), and steps 3–11 were run in the order above. The resulting `submission/predictions.csv`
-is **byte-identical** to the committed one — same MD5, zero differing rows — as are the
+was **byte-identical** to the committed one — same MD5, zero differing rows — as were the
 reconciled denominators, the county selection and the training sample. An earlier run of the
 same test is what surfaced the two defects described under *The training sample is an input*
 below.
+
+That test ran against the pre-densification archive. The committed artefacts were regenerated
+on 24 August 2026 after the September–December 2024 runs were filled in, so what the clean-clone
+test currently certifies is the pipeline, not this exact `predictions.csv`; steps 7–11 were
+re-run in place that day and reproduce it byte-for-byte. The clean-clone test is scheduled to be
+repeated against the current archive before submission.
 
 ## 5. Repository layout
 
@@ -195,6 +205,8 @@ below.
 │   ├── predict.py          # submission generation
 │   ├── ablation.py         # feature-group and baseline comparison
 │   ├── seasonal_holdout.py # seasonal-transfer probe: autumn vs the forward split
+│   ├── densification_probe.py # go/no-go on buying more training runs with the quota
+│   ├── report_numbers.py   # recomputes every number the report quotes
 │   ├── validate_submission.py
 │   └── requirements.txt
 ├── data/                   # git-ignored: raw downloads, caches, processed tables

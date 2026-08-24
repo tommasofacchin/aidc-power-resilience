@@ -99,11 +99,11 @@ def bucket_of(lead_hours: pd.Series) -> pd.Series:
     return pd.cut(lead_hours, bins=[0] + LEAD_EDGES, right=True)
 
 
-def fit_weights(val_df: pd.DataFrame, model_pred: np.ndarray,
-                quiet: bool = False) -> dict[str, dict]:
+def fit_weights(val_df: pd.DataFrame, model_pred: np.ndarray, quiet: bool = False,
+                halflives: list | None = None) -> dict[str, dict]:
     """Per-bucket persistence weight and decay half-life that minimise RMSE.
 
-    RMSE rather than MAE: on a target that is 71.6% exact zeros, MAE is minimised by
+    RMSE rather than MAE: on a target that is 69.9% exact zeros, MAE is minimised by
     collapsing toward zero (the always-zero baseline is nearly unbeatable on it), so
     tuning a blend on MAE would just pick whichever component predicts less.
 
@@ -113,6 +113,10 @@ def fit_weights(val_df: pd.DataFrame, model_pred: np.ndarray,
     would attribute to the first whatever the second could have explained. Two
     parameters against tens of thousands of rows per bucket is not a quantity of
     freedom that needs regularising.
+
+    `halflives` overrides the search grid. Its only caller is report_numbers.py, which
+    passes [None] to refit the flat-carry-forward version and measure what the decay
+    actually buys against it — the negative result section 5.1 of the report reports.
     """
     truth = val_df["target_x"].to_numpy()
     # A missing x_at_issue means EAGLE-I had no reading at issue_time, not "no outage" —
@@ -135,7 +139,7 @@ def fit_weights(val_df: pd.DataFrame, model_pred: np.ndarray,
             float(np.sqrt((((1 - w) * m + w * p - t) ** 2).mean())) for w in WEIGHT_GRID
         )
         best_rmse, best_w, best_hl = None, 0.0, None
-        for halflife in HALFLIFE_GRID:
+        for halflife in (HALFLIFE_GRID if halflives is None else halflives):
             decayed = decay(p, lead, halflife)
             for w in WEIGHT_GRID:
                 rmse = float(np.sqrt((((1 - w) * m + w * decayed - t) ** 2).mean()))

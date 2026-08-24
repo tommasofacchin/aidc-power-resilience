@@ -13,9 +13,12 @@ Open-Meteo daily quota, so nothing in the table ever reached that cutoff, the va
 split came out empty every time, and the fallback below quietly substituted a RANDOM
 80/20 split — precisely the leaky split the paragraph above rules out. Every validation
 number produced before that date came from the leaky path and must not be reported.
-2025-05-01 puts the boundary inside the data: ~80/20 by rows, with 32.7% positive rows
-in validation against 28.4% overall, so the held-out period is not an unrepresentatively
-calm stretch. Re-check this if the table's span changes again.
+2025-05-01 puts the boundary inside the data. Re-checked on 24 Aug 2026, after the
+autumn-2024 densification and the July/August 2025 runs pushed the table's span out to
+2025-08-04: the split is now 82.1/17.9 by rows (it was ~80/20 when first chosen), with
+36.0% positive rows in validation against 30.1% overall, so the held-out period is still
+not an unrepresentatively calm stretch and the cutoff stands unchanged. Re-check this
+again if the table's span changes.
 """
 
 from __future__ import annotations
