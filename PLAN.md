@@ -388,16 +388,20 @@ Codice:
 - [x] Pipeline completa: acquisizione → preprocessing → feature → training → predizione
 - [x] `requirements.txt` con versioni pinnate (dirette + transitive risolte)
 - [x] README con configurazione ambiente, ordine di esecuzione, tempi attesi
-- [x] **Testato da zero in ambiente pulito** — rifatto il 24 agosto al commit `dd1f5b0`,
-  cioè dopo la conversione al denominatore di valutazione, contro l'archivio corrente:
+- [x] **Testato da zero in ambiente pulito** — rifatto il 24 agosto sera al commit
+  `f79125d`, cioè dopo l'aggiunta del batch A del 30 novembre, contro l'archivio corrente:
   clone in directory vuota fuori dal working tree, venv nuovo da `requirements.txt`,
-  `data/raw` dall'archivio, passi 3–12. Tutti e sette gli artefatti tornano byte-identici
-  (MD5 nel README), `predict.py` non ha speso una sola chiamata API, e il pacchetto si
-  costruisce dal clone.
+  `data/raw` dall'archivio, passi 3–12 (17 minuti). Tutti e sette gli artefatti tornano
+  byte-identici (MD5 nel README), `predict.py` non ha speso una sola chiamata API sui 93
+  run, e il pacchetto si costruisce dal clone — con dentro i due file pinnati sotto
+  `data/processed/`, che prima mancavano dallo zip.
 - [x] Le tre componenti obbligatorie arrivano insieme — `code/make_submission_package.py`
   costruisce `dist/submission/` nella struttura suggerita dalle guidelines. **Si consegna
   `dist/submission.zip`, non la cartella `submission/`**, che da sola manca della codebase
   e quindi non verrebbe valutata.
+- [x] Il pacchetto è autosufficiente per chi parte dallo zip — include
+  `data/processed/training_counties.csv`, senza il quale il passo 5 ri-deriva un campione
+  diverso e il passo 7 si allena su 59 contee riportando successo (vedi README §6).
 
 ---
 

@@ -197,18 +197,16 @@ that originally produced their outputs, so treat those as approximate.
 **End to end from a clean checkout: about 38 minutes of compute for steps 3–12, plus ~2.5
 minutes to build the environment, the one-off downloads, and however many days the weather
 quota takes.** A reproducer who only wants to re-derive the model from an existing `data/`
-directory needs steps 7–11, about 31 minutes cold. Two clean-clone runs on the same machine
-differed by up to 2x on the I/O-bound steps depending on what else was running, so read the
-column as an order of magnitude, not a stopwatch.
+directory needs steps 7–11, about 31 minutes cold.
 
-**Re-run in progress at this commit.** The 30 November Task A batch added here changes
-`submission/predictions.csv` and nothing else — the model, the blend and every processed
-table are untouched, and the 65,880 rows that existed before are byte-identical inside the
-new file. The certification below therefore still holds for every artefact except the first
-row of the table, whose hash is the new file's; it is being re-run end to end at this commit
-and this paragraph will be replaced by the result.
+Take those as an upper bound rather than a stopwatch. The clean-clone run certified below
+did steps 3–12 in **17 minutes** on the same machine — step 3 in 2.0, step 4 in 0.7, step 7
+in 1.9 and step 10 in 11.3 — because the archive it read had just been copied and was still
+in the OS file cache, and because it ran on a local disk rather than a OneDrive-synced one.
+Every step here is I/O-bound or cache-bound, so the spread between two runs of the same
+commit is a factor of two.
 
-**This was tested, not asserted.** On 24 August 2026, at commit `dd1f5b0`, the repository was
+**This was tested, not asserted.** On 24 August 2026, at commit `f79125d`, the repository was
 cloned into an empty directory outside the working tree, a fresh virtualenv was built from
 `code/requirements.txt`, `data/raw` was supplied from the existing archive (steps 1, 2 and 6
 are downloads, and step 6 is quota-bound over days), and steps 3–12 were run in the order
@@ -223,15 +221,22 @@ above. Every artefact came back **byte-identical** to the committed one:
 | `data/processed/model_bundle/model.txt` | `48e1932f42006544c0aa4d3489109ec5` |
 | `data/processed/model_bundle/blend_weights.json` | `a833babc8fb52b45f3f50723142d144d` |
 
-`data/processed/training_counties.csv` also matches, but it is committed rather than derived
-(step 5 keeps the versioned sample on purpose, because the archived forecast runs were fetched
-for exactly those 102 counties), so it is evidence that the file travels with the repository,
-not that the pipeline reproduces it.
+`data/processed/training_counties.csv` also matches (`c7aff04c903d502023e01dccdb346573`), but
+it is committed rather than derived (step 5 keeps the versioned sample on purpose, because the
+archived forecast runs were fetched for exactly those 102 counties), so it is evidence that the
+file travels with the repository, not that the pipeline reproduces it. Step 12 in the clone
+built the package with that file and `baseline_runs_20260822.json` inside it, which is what
+makes the same reasoning hold for a reviewer who has only the zip.
 
-Step 10 reported *"All runs cached — the prediction loop below makes no further API calls"*,
-so a reviewer reproducing this spends no Open-Meteo quota. An earlier run of the same test,
-against the pre-densification archive, is what surfaced the two defects described under
-*The training sample is an input* below.
+Step 10 reported *"All runs cached — the prediction loop below makes no further API calls"*
+for all 93 runs, so a reviewer reproducing this spends no Open-Meteo quota. An earlier run of
+the same test, against the pre-densification archive, is what surfaced the two defects described
+under *The training sample is an input* below.
+
+`report/report.pdf` is deliberately not in that table: it is printed by a headless browser that
+stamps a timestamp into the file, so it does not reproduce byte for byte (see section 3). Its
+content does — the HTML it is printed from is versioned, and every number in it comes from
+`report_numbers.py`.
 
 ## 5. Repository layout
 
