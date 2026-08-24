@@ -171,26 +171,28 @@ that originally produced their outputs, so treat those as approximate.
 
 | Step | Clean clone | Repeat (warm) | Note |
 |---|---|---|---|
-| 0. `venv` + `pip install` | ~1.5 min | — | 8 direct dependencies, wheels only |
+| 0. `venv` + `pip install` | ~2.5 min | — | 8 direct dependencies, wheels only |
 | 1. EAGLE-I download | ~25 min | instant | 2.9 GB over HTTPS, bandwidth-bound |
 | 2. Gazetteer | ~5 s | instant | 140 KB |
-| 3. Denominator reconciliation | ~2 min | ~10 s | scans 2024 + 2025 once, then caches both scans |
-| 4. Select 5 counties | ~45 s | ~45 s | full scan of the 2025 annual file |
+| 3. Denominator reconciliation | ~4.5 min | ~10 s | scans 2024 + 2025 once, then caches both scans |
+| 4. Select 5 counties | ~1.7 min | ~45 s | full scan of the 2025 annual file |
 | 5. Training sample | ~1 s | ~1 s | keeps the versioned sample; `--refresh` re-selects |
 | 6. Weather download | **days** | instant | quota-bound, not bandwidth-bound — see section 2 |
-| 7. Build training table | ~3 min | ~1.8 min | 388 runs × 102 counties → 2.80 M rows |
+| 7. Build training table | ~4 min | ~1.8 min | 388 runs × 102 counties → 2.80 M rows |
 | 8. Train | ~1 min | ~27 s | LightGBM, CPU, 2.30 M training rows |
 | 9. Blend fit | ~1.3 min | ~36 s | weight × decay half-life grid, per lead bucket |
-| 10. Generate submission | ~35 min | ~26 min | 93 IFS runs, every one a cache hit; Task A evaluates four quarter-hours per row (see `predict.py`), so the loop does ~2x the work of a per-hour pass |
+| 10. Generate submission | ~25 min | ~26 min | 93 IFS runs, every one a cache hit; Task A evaluates four quarter-hours per row (see `predict.py`), so the loop does ~2x the work of a per-hour pass |
 | 11. Validate | ~1 s | ~1 s | |
 | 12. Build the package | ~2 s | ~2 s | copies code/ and zips |
 
-**End to end from a clean checkout: about 43 minutes of compute for steps 3–12, plus ~1.5
+**End to end from a clean checkout: about 38 minutes of compute for steps 3–12, plus ~2.5
 minutes to build the environment, the one-off downloads, and however many days the weather
 quota takes.** A reproducer who only wants to re-derive the model from an existing `data/`
-directory needs steps 7–11, about 40 minutes cold.
+directory needs steps 7–11, about 31 minutes cold. Two clean-clone runs on the same machine
+differed by up to 2x on the I/O-bound steps depending on what else was running, so read the
+column as an order of magnitude, not a stopwatch.
 
-**This was tested, not asserted.** On 24 August 2026, at commit `670b66c`, the repository was
+**This was tested, not asserted.** On 24 August 2026, at commit `682c6f5`, the repository was
 cloned into an empty directory outside the working tree, a fresh virtualenv was built from
 `code/requirements.txt`, `data/raw` was supplied from the existing archive (steps 1, 2 and 6
 are downloads, and step 6 is quota-bound over days), and steps 3–12 were run in the order
@@ -198,18 +200,12 @@ above. Every artefact came back **byte-identical** to the committed one:
 
 | Artefact | MD5 |
 |---|---|
-| `submission/predictions.csv` | see the note below |
+| `submission/predictions.csv` | `90f2ed5dd3ed8c8ba68ed392f4cf3c9d` |
 | `data/processed/total_customers_reconciled.csv` | `534f2888c9bb03dfd206ec90d30937bb` |
 | `data/processed/selected_counties.csv` | `c406c65cd6e685641ab2567c2317e1b8` |
 | `data/processed/training_table_partial.parquet` | `f3118a0926e282d18a4432e4ec9056fd` |
 | `data/processed/model_bundle/model.txt` | `48e1932f42006544c0aa4d3489109ec5` |
 | `data/processed/model_bundle/blend_weights.json` | `a833babc8fb52b45f3f50723142d144d` |
-
-That run predates the Task A change described in `predict.py`, which was made the same day
-after the organisers confirmed hourly mean aggregation: it re-verifies steps 3–9 and 11–12
-unchanged, and step 10's code has moved since. `submission/predictions.csv` is currently
-`90f2ed5dd3ed8c8ba68ed392f4cf3c9d`, produced by the same pipeline in place; the clean-clone test
-should be re-run once before submission to certify step 10 as well.
 
 `data/processed/training_counties.csv` also matches, but it is committed rather than derived
 (step 5 keeps the versioned sample on purpose, because the archived forecast runs were fetched
