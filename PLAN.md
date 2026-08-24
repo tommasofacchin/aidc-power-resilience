@@ -352,10 +352,11 @@ Codice:
 - [x] Pipeline completa: acquisizione → preprocessing → feature → training → predizione
 - [x] `requirements.txt` con versioni pinnate (dirette + transitive risolte)
 - [x] README con configurazione ambiente, ordine di esecuzione, tempi attesi
-- [ ] **Testato da zero in ambiente pulito** — fatto il 22 agosto, ma contro l'archivio
-  pre-densificazione: certifica la pipeline, non questo `predictions.csv`. **Da rifare
-  prima della consegna.** (Il 24 agosto la riproduzione in loco — tabella, modello, pesi,
-  submission — è tornata byte-identica.)
+- [x] **Testato da zero in ambiente pulito** — rifatto il 24 agosto al commit `670b66c`
+  contro l'archivio corrente: clone in directory vuota fuori dal working tree, venv nuovo
+  da `requirements.txt`, `data/raw` dall'archivio, passi 3–12. Tutti gli artefatti tornano
+  byte-identici (MD5 nel README), `predict.py` non ha speso una sola chiamata API, e il
+  pacchetto si costruisce dal clone. ~26 minuti di calcolo.
 - [x] Le tre componenti obbligatorie arrivano insieme — `code/make_submission_package.py`
   costruisce `dist/submission/` nella struttura suggerita dalle guidelines. **Si consegna
   `dist/submission.zip`, non la cartella `submission/`**, che da sola manca della codebase
@@ -489,8 +490,18 @@ bucket su cinque invece di uno, ma vale lo 0,06 % complessivo. Tre numeri erano 
 stantii prima di oggi (la didascalia della Figura 1, la p95 di Orleans, il confronto dello
 stump): corretti.
 
-**28–29 ago — chiusura.** Ri-eseguire il test di riproducibilità da clone pulito (deve
-tornare identico bit-a-bit) e consegnare il 29, tenendo il 30 come margine.
+**24 ago — chiusura, anticipata.** Il test di riproducibilità da clone pulito è stato
+rifatto lo stesso giorno contro l'archivio densificato: identico bit-a-bit su tutti e sei
+gli artefatti derivati. Il pacchetto `dist/submission.zip` è costruito e validato.
+
+**Sulla scadenza — da risolvere prima di rilassarsi.** L'intestazione di questo piano e
+`docs/rules.md` dicono entrambi **24 agosto 2026, 23:59 CET**, e il Q&A della diretta
+(`docs/livestream_transcript.txt`, riga 842) conferma esplicitamente il 24 per Topic 2,
+task A e B. La proroga al 30 è entrata in questo documento il 22 agosto (commit `444e7c0`)
+**senza citare una fonte**, e la memoria di progetto la dava per buona rimandando a questo
+file: un cerchio. Finché non salta fuori una comunicazione degli organizzatori che la
+attesti, **la scadenza operativa è il 24**. Consegnare oggi non costa nulla; sbagliarsi
+costa tutto.
 
 ## Se avanza quota e tempo
 

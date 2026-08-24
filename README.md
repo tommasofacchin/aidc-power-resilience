@@ -161,43 +161,59 @@ The result is 8 pages, against the guidelines' 3–8 limit.
 
 ## 4. Expected runtime
 
-Wall clock on the reference machine (16 logical cores, 15 GB RAM), single run, warm cache where the
-step has one. Steps 7–11 were re-timed on 24 August 2026 against the densified table; steps
-1–5 are from the runs that originally produced their outputs, so treat them as approximate.
+Wall clock on the reference machine (16 logical cores, 15 GB RAM), single run. The
+*clean clone* column is what a reviewer actually faces and is the one to plan against: it
+was measured end to end on 24 August 2026 in the reproduction test described below — fresh
+checkout, fresh virtualenv, `data/raw` copied in, nothing else warm. The *repeat* column is
+the same step run again in a working directory whose OS file cache is already hot, which is
+the situation while developing. Steps 1, 2 and 6 are downloads and are timed from the runs
+that originally produced their outputs, so treat those as approximate.
 
-| Step | Cold | Warm (cached) | Note |
+| Step | Clean clone | Repeat (warm) | Note |
 |---|---|---|---|
+| 0. `venv` + `pip install` | ~1.5 min | — | 8 direct dependencies, wheels only |
 | 1. EAGLE-I download | ~25 min | instant | 2.9 GB over HTTPS, bandwidth-bound |
 | 2. Gazetteer | ~5 s | instant | 140 KB |
 | 3. Denominator reconciliation | ~2 min | ~10 s | scans 2024 + 2025 once, then caches both scans |
 | 4. Select 5 counties | ~45 s | ~45 s | full scan of the 2025 annual file |
-| 5. Training sample | ~2 s | ~2 s | keeps the versioned sample; `--refresh` re-selects |
+| 5. Training sample | ~1 s | ~1 s | keeps the versioned sample; `--refresh` re-selects |
 | 6. Weather download | **days** | instant | quota-bound, not bandwidth-bound — see section 2 |
-| 7. Build training table | ~1.8 min | — | 388 runs × 102 counties → 2.80 M rows |
-| 8. Train | ~27 s | — | LightGBM, CPU, 2.30 M training rows |
-| 9. Blend fit | ~36 s | — | weight × decay half-life grid, per lead bucket |
-| 10. Generate submission | ~8 min | ~8 min | 93 IFS runs, all cache hits after the first pass |
-| 11. Validate | ~1 s | — | |
+| 7. Build training table | ~3 min | ~1.8 min | 388 runs × 102 counties → 2.80 M rows |
+| 8. Train | ~1 min | ~27 s | LightGBM, CPU, 2.30 M training rows |
+| 9. Blend fit | ~1.3 min | ~36 s | weight × decay half-life grid, per lead bucket |
+| 10. Generate submission | ~18 min | ~8 min | 93 IFS runs, every one a cache hit; the gap is the 274 MB sqlite cache being read cold |
+| 11. Validate | ~1 s | ~1 s | |
+| 12. Build the package | ~2 s | ~2 s | copies code/ and zips |
 
-**End to end from a clean checkout: about 15 minutes of compute for steps 3–11, plus the
-one-off downloads and however many days the weather quota takes.** A reproducer who only
-wants to re-derive the model from an existing `data/` directory needs steps 7–11, about
-10 minutes.
+**End to end from a clean checkout: about 26 minutes of compute for steps 3–12, plus ~1.5
+minutes to build the environment, the one-off downloads, and however many days the weather
+quota takes.** A reproducer who only wants to re-derive the model from an existing `data/`
+directory needs steps 7–11, about 23 minutes cold.
 
-**This was tested, not asserted.** On 22 August 2026 the repository was cloned into an empty
-directory, a fresh virtualenv was built from `code/requirements.txt`, `data/raw` was supplied
-from the existing archive (steps 1, 2 and 6 are downloads, and step 6 is quota-bound over
-days), and steps 3–11 were run in the order above. The resulting `submission/predictions.csv`
-was **byte-identical** to the committed one — same MD5, zero differing rows — as were the
-reconciled denominators, the county selection and the training sample. An earlier run of the
-same test is what surfaced the two defects described under *The training sample is an input*
-below.
+**This was tested, not asserted.** On 24 August 2026, at commit `670b66c`, the repository was
+cloned into an empty directory outside the working tree, a fresh virtualenv was built from
+`code/requirements.txt`, `data/raw` was supplied from the existing archive (steps 1, 2 and 6
+are downloads, and step 6 is quota-bound over days), and steps 3–12 were run in the order
+above. Every artefact came back **byte-identical** to the committed one:
 
-That test ran against the pre-densification archive. The committed artefacts were regenerated
-on 24 August 2026 after the September–December 2024 runs were filled in, so what the clean-clone
-test currently certifies is the pipeline, not this exact `predictions.csv`; steps 7–11 were
-re-run in place that day and reproduce it byte-for-byte. The clean-clone test is scheduled to be
-repeated against the current archive before submission.
+| Artefact | MD5 |
+|---|---|
+| `submission/predictions.csv` | `f8ff3f724f9fdd359de6627fdb3535af` |
+| `data/processed/total_customers_reconciled.csv` | `534f2888c9bb03dfd206ec90d30937bb` |
+| `data/processed/selected_counties.csv` | `c406c65cd6e685641ab2567c2317e1b8` |
+| `data/processed/training_table_partial.parquet` | `f3118a0926e282d18a4432e4ec9056fd` |
+| `data/processed/model_bundle/model.txt` | `48e1932f42006544c0aa4d3489109ec5` |
+| `data/processed/model_bundle/blend_weights.json` | `a833babc8fb52b45f3f50723142d144d` |
+
+`data/processed/training_counties.csv` also matches, but it is committed rather than derived
+(step 5 keeps the versioned sample on purpose, because the archived forecast runs were fetched
+for exactly those 102 counties), so it is evidence that the file travels with the repository,
+not that the pipeline reproduces it.
+
+Step 10 reported *"All runs cached — the prediction loop below makes no further API calls"*,
+so a reviewer reproducing this spends no Open-Meteo quota. An earlier run of the same test,
+against the pre-densification archive, is what surfaced the two defects described under
+*The training sample is an input* below.
 
 ## 5. Repository layout
 
