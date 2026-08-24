@@ -151,9 +151,9 @@ every lead time both tasks require, from archived ECMWF IFS HRES forecast runs p
 observed EAGLE-I outage history available at each issue time. It is a single LightGBM
 regressor with a Tweedie objective, one model covering both tasks, with lead time as an
 explicit feature, blended toward a persistence forecast by a weight fitted per lead
-bucket. The submitted file contains 65,880 rows: 92 daily Task A batches and 365
-six-hourly Task B batches, five counties each, generated from 93 distinct archived
-forecast runs. It is built from 388 forecast runs across 102 counties &mdash;
+bucket. The submitted file contains 65,880 rows: 92 daily Task A batches of hourly means and
+365 six-hourly Task B batches of 15-minute instants, five counties each, generated from 93
+distinct archived forecast runs. It is built from 388 forecast runs across 102 counties &mdash;
 2.80&nbsp;million rows &mdash; spanning September&nbsp;2024 to August&nbsp;2025, of which the
 2.30&nbsp;million before 1&nbsp;May&nbsp;2025 are used for training and the rest held out.
 </p>
@@ -265,26 +265,22 @@ that by hand is not cherry-picking; refusing to correct for it would be.
 
 <div class="callout">
   <p>
-    One caveat we would rather state than bury. The ranking ran before the denominator problems
-    of Section&nbsp;3.4 were found, so it used <code>MCC.csv</code> throughout, and two of the
-    five were ranked on a wrong denominator. Mecklenburg's was too small by 20.9, inflating
-    every <code>x</code> we computed for it and carrying it into the shortlist as the strongest
-    mainland signal; corrected, it is the <em>quietest</em> of the five, its significant-event
-    rate falling from 13.8&nbsp;% to 0.4&nbsp;%. Arecibo's was too small by 4.7, which is why
-    its <code>x</code> saturated at 1.000; corrected, 43.5&nbsp;%&nbsp;&rarr;&nbsp;15.2&nbsp;%
-    and a maximum of 0.725. Table&nbsp;1 is recomputed throughout. Arecibo survives the
-    correction as the strongest county in the set; Mecklenburg does not.
-  </p>
-  <p>
-    We kept Mecklenburg, and record that as a known weakness rather than argue it away. The
-    regime argument that put it on the shortlist &mdash; Piedmont, hurricane remnants inland, a
-    large well-reported denominator &mdash; is untouched by the arithmetic error. But a county
-    that entered on a number we later proved wrong is not there on the stated criterion, and
-    no after-the-fact regime argument changes that. Re-running the selection on corrected
-    denominators is the right fix, at roughly 185 archived forecast calls (93 to regenerate the
-    submission at new coordinates, ~92 to give the replacement county training coverage); the
-    selection code already takes the reconciled table as its input. Read Mecklenburg as a
-    selection we disclose, not one we defend.
+    One caveat we would rather state than bury. The ranking ran before the denominator
+    problems of Section&nbsp;3.4 were found, so it used <code>MCC.csv</code> throughout, and two
+    of the five were ranked on a wrong denominator. Mecklenburg's was too small by
+    20.9&times;, inflating every <code>x</code> we computed for it and carrying it into the
+    shortlist as the strongest mainland signal; corrected, it is the quietest of the five, its
+    significant-event rate falling from 13.8&nbsp;% to 0.4&nbsp;%. Arecibo's was too small by
+    4.7&times;, which is why its <code>x</code> saturated at 1.000; corrected,
+    43.5&nbsp;% &rarr; 15.2&nbsp;% and a maximum of 0.725. Table&nbsp;1 is recomputed
+    throughout. Arecibo survives the correction as the strongest county in the set;
+    Mecklenburg does not, and we kept it anyway. The regime argument that put it on the
+    shortlist &mdash; Piedmont, hurricane remnants inland, a large well-reported denominator
+    &mdash; is untouched by the arithmetic error, but a county that entered on a number we
+    later proved wrong is not there on the stated criterion, and no after-the-fact regime
+    argument changes that. Re-running the selection on corrected denominators is the right fix,
+    at roughly 185 archived forecast calls, and the selection code already takes the reconciled
+    table as its input. Read Mecklenburg as a selection we disclose, not one we defend.
   </p>
 </div>
 
@@ -294,8 +290,8 @@ that by hand is not cherry-picking; refusing to correct for it would be.
 
 <p>
 The competition materials point at the ORNL/OSTI record, which routes to a Globus endpoint
-covering 2014&ndash;2022 and requiring an account. We lost most of a day believing that was the
-only scriptable route. It is not: the complete 2014&ndash;2025 release, 17 files and about
+covering 2014&ndash;2022 and requiring an account. That is not the only scriptable route, and
+believing it was cost most of a day: the complete 2014&ndash;2025 release, 17 files and about
 11.6&nbsp;GB, sits on figshare as article 24237376 (version 4, February 2026), and every annual
 file is an anonymous HTTPS GET against <code>ndownloader.figshare.com</code>. Our downloader
 resolves that file table from the figshare API rather than hard-coding it, and fetches
@@ -435,6 +431,17 @@ arithmetically impossible.
 <h3>3.5 Timestamp alignment and spatial matching</h3>
 
 <p>
+One alignment question is <em>what a Task A row is</em>, not when it is. EAGLE-I records every
+15 minutes and Task A is scored hourly, so the organizers asked for hourly mean aggregation: a
+row here is the mean over the four quarter-hours its label opens, 03:00 meaning [03:00, 04:00).
+It matters &mdash; across event hours in our five counties over January&ndash;August 2025 the
+hourly mean and the value at :00 differ by a fifth of the quantity predicted, an RMSE
+18&nbsp;% of this system's autumn figure &mdash; and needs no second model, since the mean of
+unbiased estimates of the four instants estimates their mean without bias. Task B rows are
+15-minute instants already.
+</p>
+
+<p>
 Everything internal is naive UTC. EAGLE-I's <code>run_start_time</code> is parsed as UTC and
 never localized; the Open-Meteo response comes back timezone-aware and is converted to naive
 UTC at the point where the weather table is renamed for joining, because a tz-aware and a
@@ -535,15 +542,13 @@ million trained on.
 
 <p>
 Two decisions came out of bugs rather than design. There is no early stopping: an earlier
-version registered no validation set at all through a keyword-name error, stopped after 25 of
-500 trees, and deployed a stump with a maximum prediction of 0.012 against the 0.056 the model
-reaches as trained now &mdash; no
-dynamic range, and unable to signal a severe event. We fixed it by removing early stopping
-rather than repairing the wiring, because stopping on the validation set and then reporting
-metrics on it would make every number here optimistic. And the model is saved as a bundle
-together with the fitted state its features depend on (the FIPS category ordering and the
-climatology thresholds), because re-deriving either at prediction time produces a model that
-silently answers a different question.
+version registered no validation set through a keyword-name error, stopped after 25 of 500
+trees and deployed a stump whose maximum prediction was 0.012 against today's 0.056 &mdash; no
+dynamic range, unable to signal a severe event. We removed early stopping rather than repair
+the wiring, because stopping on the validation set and then reporting metrics on it would make
+every number here optimistic. And the model ships as a bundle with the fitted state its
+features depend on (FIPS category ordering, climatology thresholds): re-deriving either at
+prediction time silently answers a different question.
 </p>
 
 <h3>5.1 Blending with persistence, and the season it is fitted in</h3>
@@ -595,15 +600,13 @@ so its predictions there are in-sample and would have understated exactly what t
 </p>
 
 <p>
-We expected the carry-forward itself to be the weak part, and it is not. Flat persistence
-asserts that a county with 4&nbsp;% of customers out now still has 4&nbsp;% out in two days,
-so the fit searches an exponential restoration decay jointly with the weight, flat
-carry-forward being one candidate half-life among thirteen. On the densified autumn window it
-picks a decay in four buckets of five &mdash; but at half-lives of 72 to 96&nbsp;hours, and
-refitting with flat carry-forward as the only option costs 0.023594 against 0.023580, which is
-0.06&nbsp;%. The decay is chosen and almost worthless, which reads the same way physically:
-autumn outages are multi-day storm restorations, so the state genuinely persists across the
-horizon.
+We expected the carry-forward itself to be the weak part, and it is not. Rather than assert
+that a county with 4&nbsp;% of customers out now still has 4&nbsp;% out in two days, the fit
+searches an exponential restoration decay jointly with the weight, flat being one candidate
+half-life among thirteen. It picks a decay in four buckets of five, but at half-lives of
+72&ndash;96&nbsp;h and worth 0.06&nbsp;% overall (0.023580, against 0.023594 refitted flat):
+chosen and almost worthless, which reads the same way physically &mdash; autumn outages are
+multi-day restorations, so the state genuinely persists across the horizon.
 </p>
 
 <p>
@@ -895,15 +898,12 @@ weights for each head and comparing what would actually ship, the three land at 
 carries so much of the blended prediction that the choice of head stops mattering, and the
 honest conclusion is not that Tweedie won but that this decision is immaterial at the margin
 we can measure. Given that, we keep the single head over serving two models, and we would not
-defend the choice on accuracy grounds.
+defend the choice on accuracy grounds. (Its severity head regresses <code>log x</code> under
+squared loss: a gamma objective let leaf values reach 3.4&times;10<sup>4</sup> for a quantity
+bounded by 1, which log space prevents by construction.)
 </p>
 
-<p>
-The severity head regresses <code>log x</code> under squared loss rather than <code>x</code>
-under a gamma objective, which was tried first and let leaf values run away to
-3.4&times;10<sup>4</sup> for a quantity bounded by 1. Log space bounds it by construction, at the
-cost of <code>exp(E[log x])</code> being a geometric mean sitting below <code>E[x]</code>.
-</p>
+
 
 
 
@@ -943,15 +943,13 @@ almost nothing &mdash; but it is the smaller contribution.
 </p>
 
 <p>
-Four smaller caveats. The blend weights are fitted on a single autumn containing two major
-landfalling systems and would be too persistence-heavy for an unusually quiet one
-(Section&nbsp;5.1 bounds the downside). The climatological quantiles are fitted on months rather
-than decades, so &ldquo;p99 gust&rdquo; here means &ldquo;p99 of what this county saw in the training
-window&rdquo;. Task B's weather is interpolated from hourly IFS output and contains no genuine
-sub-hourly information. And the denominator remains the largest uncontrolled risk in the
-submission: we predict a ratio whose divisor the organizers hold privately, and if their
-reference for a county differs from ours, our predictions for it are scaled wrong by exactly
-that factor however good the model is.
+Beyond the blend-weight caveat Section&nbsp;5.1 states and bounds, three smaller ones. The
+climatological quantiles are fitted on months rather than decades, so &ldquo;p99 gust&rdquo; here
+means &ldquo;p99 of what this county saw in the training window&rdquo;. Task B's weather is
+interpolated from hourly IFS output and contains no genuine sub-hourly information. And the
+denominator remains the largest uncontrolled risk: we predict a ratio whose divisor the
+organizers hold privately, and if their reference for a county differs from ours, our
+predictions for it are scaled wrong by exactly that factor however good the model is.
 </p>
 
 <h2>9. Data sources and licenses</h2>

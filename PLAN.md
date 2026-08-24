@@ -502,6 +502,50 @@ sezione qui sopra è stata scritta il 22 agosto con la data sbagliata e senza fo
 memoria di progetto la ripeteva. `docs/rules.md` e il Q&A della diretta dicono ancora 24
 agosto perché precedono l'annuncio. **Scadenza operativa: 31 agosto 2026.**
 
+## Cosa hanno detto gli admin sul forum (letto il 24 agosto)
+
+Quattro cose che toccano la consegna, in ordine di impatto.
+
+1. **Scadenza 31 agosto** (annuncio del 21). Chi ha già consegnato può revisionare.
+
+2. **Task A: «we will suggest hourly mean aggregation».** Noi predicevamo l'istantaneo
+   alle :00. Misurato sulle 5 contee, gen–ago 2025, 28.867 ore complete: sulle ore con
+   evento le due grandezze differiscono di 0,00206 in media (**19,9 % in relativo**), RMSE
+   dello scarto 0,004296 — il **18 % dell'RMSE del sistema in autunno**. Corretto in
+   `predict.py`: una riga Task A è ora la media dei quattro quarti d'ora che l'etichetta
+   apre, `[H, H+1)`, convenzione left-label come un `resample("1h")` di default. Non serve
+   riallenare (la media di stime non distorte dei quattro istanti stima senza distorsione
+   la loro media) e non costa quota (il meteo a 15 minuti è interpolato in locale dallo
+   stesso run in cache). Task B invariato: le sue righe sono già istanti a 15 minuti.
+
+3. **Task B a 15 minuti è accettato.** Il chiarimento del 24 agosto dice che la definizione
+   resta 5 minuti ma per Phase 1 «submissions at either 5-minute or 15-minute resolution
+   are acceptable». Restiamo a 15: EAGLE-I registra a 15 minuti e scendere a 5 vorrebbe
+   dire fabbricare ground truth. In Phase 2 servirà 5 minuti davvero.
+
+4. **Nessun vincolo sulle fonti dati**, purché ogni fonte sia dichiarata con la licenza —
+   che è esattamente ciò che fa §9 del report. EAGLE-I resta la base di valutazione.
+
+### Il denominatore, e la domanda da fare sul forum
+
+L'admin scrive: *«regarding the total customer number, MCC.CSV in the first link is the
+total customer number listed in the fips code»*. Delle nostre 5 contee **3 usano già MCC**
+(Orleans, Mackinac, Boone). Le altre due no, e per ragioni diverse:
+
+- **Arecibo 72013** — MCC dice 41.122 clienti totali, EAGLE-I registra fino a 139.095 fuori
+  servizio. Con MCC il ground truth stesso varrebbe x = 3,4: impossibile, non opinabile.
+  Usiamo 191.803 (`mcc->consistency`).
+- **Mecklenburg 37119** — MCC dice 28.172, noi usiamo 588.615 dalla colonna del file
+  annuale 2024 (`infile`), perché il totale di stato della North Carolina in MCC copre
+  circa un terzo del reale. Fattore **20,9×**. È l'unica esposizione vera.
+
+**Da chiedere sul forum** (l'admin invita esplicitamente a farlo): se la valutazione usa
+MCC.csv come denominatore anche dove il numeratore osservato lo supera — cioè dove x
+risulterebbe > 1 — o se esiste un riferimento riconciliato. Nel frattempo la scelta attuale
+è dalla parte prudente: se sbagliamo denominatore, sottostimare x costa meno che
+sovrastimarlo, perché su un target fatto al 70 % di zeri l'RMSE punisce molto di più la
+sovrastima.
+
 ## Se avanza quota e tempo
 
 1. **Cicli 06/18Z.** Non è noto se l'archivio IFS HRES li esponga su questo endpoint.

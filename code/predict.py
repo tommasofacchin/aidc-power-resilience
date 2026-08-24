@@ -10,6 +10,10 @@ Schedule (PLAN.md section 2.1):
 - Task B: every 6h (00/06/12/18Z), 2025-08-31T18:00Z .. 2025-11-30T18:00Z,
   lead +15m..+6h (24 rows/batch)
 
+A Task A row is an hourly MEAN, not the value at the top of the hour — the organisers
+asked for hourly mean aggregation and the two are measurably different quantities. See
+TASK_A_SUBHOUR_OFFSETS below for the measurement and for why this needs no retraining.
+
 issue_time -> run mapping (PLAN.md section 2.2), accounting for ~5-7h IFS dissemination
 lag. Both tasks deliberately share ONE run per calendar day:
 - Task A: issue D 00:00Z          -> run (D-1) 12:00Z  (lead-from-run +12h..+60h)
@@ -76,6 +80,27 @@ TASK_B_ISSUE_END = pd.Timestamp("2025-11-30T18:00:00")
 
 TASK_A_LEADS = [pd.Timedelta(hours=h) for h in range(1, 49)]
 TASK_B_LEADS = [pd.Timedelta(minutes=15 * q) for q in range(1, 25)]
+
+# Task A is scored at 1-hour resolution against a ground truth EAGLE-I only records
+# every 15 minutes, so the hourly value has to be an aggregate of four readings. The
+# organisers' guidance on the discussion wall is explicit: "For task A we will suggest
+# hourly mean aggregation." Predicting the instantaneous value at :00 instead is a
+# measurably different quantity — on the five reporting counties over Jan-Aug 2025, the
+# two disagree by 0.00206 on average across hours that contain an event, about 20% of
+# the value being predicted, and the RMSE of the disagreement is 0.0043, roughly 18% of
+# this system's autumn RMSE. That is error bought for nothing.
+#
+# So a Task A row is the mean of the four quarter-hours the label opens: 03:00 means the
+# mean over [03:00, 04:00). Left-labelled, because that is what pandas' resample("1h")
+# does by default and therefore what an aggregation of the 15-minute series most likely
+# is on the scoring side. Task B is unaffected: its rows are 15-minute instants already,
+# which is the source's native granularity.
+#
+# No retraining is needed for this and none was done. The mean of unbiased estimates of
+# the four instants is an unbiased estimate of their mean, so the existing model and
+# blend are applied unchanged at each quarter and averaged afterwards. It costs no API
+# quota either: the 15-minute weather is interpolated locally from the same cached run.
+TASK_A_SUBHOUR_OFFSETS = [pd.Timedelta(minutes=m) for m in (0, 15, 30, 45)]
 
 # Every submission batch asks for exactly this many forecast hours, Task A and Task B
 # alike. This is NOT a per-batch minimum, and must not be recomputed per batch:
@@ -214,7 +239,8 @@ def generate_predictions(schedule: pd.DataFrame, bundle: ModelBundle) -> pd.Data
         # entry for the run they share (see SUBMISSION_FORECAST_HOURS). Verify the
         # batch really is covered rather than trusting the constant silently: falling
         # short would surface far downstream as an empty weather slice.
-        last_target_time = issue_time + leads[-1]
+        sub_offsets = TASK_A_SUBHOUR_OFFSETS if task_id == "A" else [pd.Timedelta(0)]
+        last_target_time = issue_time + leads[-1] + sub_offsets[-1]
         needed_h = (last_target_time - run_time).total_seconds() / 3600
         if needed_h >= SUBMISSION_FORECAST_HOURS:
             raise RuntimeError(
@@ -224,9 +250,12 @@ def generate_predictions(schedule: pd.DataFrame, bundle: ModelBundle) -> pd.Data
                 f"every response cached at the old value would be re-requested at the "
                 f"new one, spending Open-Meteo quota that may not be there."
             )
+        # Both tasks need the interpolated 15-minute grid now: Task B because its rows
+        # are 15-minute instants, Task A because its hourly mean is built from four of
+        # them. Interpolation is local, so this spends no extra quota.
         weather = build_weather_for_batch(
             counties[["fips_code", "latitude", "longitude"]], run_time,
-            SUBMISSION_FORECAST_HOURS, need_15min=(task_id == "B"),
+            SUBMISSION_FORECAST_HOURS, need_15min=True,
             climatology=bundle.climatology,
         )
 
@@ -234,54 +263,77 @@ def generate_predictions(schedule: pd.DataFrame, bundle: ModelBundle) -> pd.Data
 
         for lead in leads:
             target_time = issue_time + lead
-            rows = weather[weather["time"] == target_time.tz_localize("UTC")].copy()
-            if rows.empty:
-                raise RuntimeError(
-                    f"No weather row for target_time={target_time} from run_time={run_time} "
-                    f"(task {task_id}, issue_time={issue_time}) — forecast_hours was too short."
-                )
-            rows = rows.merge(ar.drop(columns=["issue_time"]), on="fips_code", how="left")
-            rows["issue_time"] = issue_time
-            rows["target_time"] = target_time
-            # NOTE: lead_hours is deliberately NOT overwritten with (target - issue).
-            # pivot_weather already set it to (target - run_time), i.e. forecast age,
-            # which is exactly what it meant during training (where issue == run).
-            # Overwriting it here would tell the model "this forecast is 1 hour old"
-            # about weather that is really 13 hours old for Task A, making it
-            # over-trust stale forecasts. Keeping forecast-age semantics also puts
-            # Task B's leads at 12.25-36h — inside the 1-71h range training actually
-            # saw — instead of 0.25-6h, which extrapolated below anything training
-            # ever saw. (Those figures are for the shared-run mapping; they were
-            # 6.25-12h when Task B still fetched its own run every 6h.)
-            rows = add_temporal_features(rows, "target_time")
-            rows["total_customers"] = rows["fips_code"].map(mcc.set_index("fips_code")["total_customers"])
+            # One pass per quarter-hour for Task A (see TASK_A_SUBHOUR_OFFSETS), a single
+            # pass at the instant itself for Task B. Each pass is the full predictor —
+            # model then blend, at that quarter's own operational lead — because the
+            # quantity being averaged is the system's genuine estimate of each instant,
+            # not an intermediate.
+            sub_predictions: list[np.ndarray] = []
+            emitted_fips: pd.DataFrame | None = None
+            for offset in sub_offsets:
+                sub_target_time = target_time + offset
+                rows = weather[weather["time"] == sub_target_time.tz_localize("UTC")].copy()
+                if rows.empty:
+                    raise RuntimeError(
+                        f"No weather row for target_time={sub_target_time} from "
+                        f"run_time={run_time} (task {task_id}, issue_time={issue_time}) — "
+                        f"forecast_hours was too short."
+                    )
+                # Sorted so the four quarter-hour prediction vectors line up county by
+                # county; averaging them relies on a shared row order, and nothing else
+                # in this loop guarantees one.
+                rows = rows.sort_values("fips_code").reset_index(drop=True)
+                rows = rows.merge(ar.drop(columns=["issue_time"]), on="fips_code", how="left")
+                rows["issue_time"] = issue_time
+                rows["target_time"] = sub_target_time
+                # NOTE: lead_hours is deliberately NOT overwritten with (target - issue).
+                # pivot_weather already set it to (target - run_time), i.e. forecast age,
+                # which is exactly what it meant during training (where issue == run).
+                # Overwriting it here would tell the model "this forecast is 1 hour old"
+                # about weather that is really 13 hours old for Task A, making it
+                # over-trust stale forecasts. Keeping forecast-age semantics also puts
+                # Task B's leads at 12.25-36h — inside the 1-71h range training actually
+                # saw — instead of 0.25-6h, which extrapolated below anything training
+                # ever saw. (Those figures are for the shared-run mapping; they were
+                # 6.25-12h when Task B still fetched its own run every 6h.)
+                rows = add_temporal_features(rows, "target_time")
+                rows["total_customers"] = rows["fips_code"].map(
+                    mcc.set_index("fips_code")["total_customers"])
 
-            missing_features = [c for c in feature_cols if c not in rows.columns]
-            if missing_features:
-                raise RuntimeError(
-                    f"Features the model expects are absent at prediction time: "
-                    f"{missing_features}. Filling them with NaN would silently degrade "
-                    f"predictions instead of surfacing the mismatch."
-                )
-            X = rows[feature_cols].copy()
-            # Encode with the TRAINING categories: LightGBM consumes categoricals by
-            # integer code, so re-deriving categories from these 5 counties alone would
-            # remap every county onto a different identity.
-            X["fips_code"] = bundle.encode_fips(X["fips_code"])
-            pred = np.clip(bundle.booster.predict(X), 0, 1)
+                missing_features = [c for c in feature_cols if c not in rows.columns]
+                if missing_features:
+                    raise RuntimeError(
+                        f"Features the model expects are absent at prediction time: "
+                        f"{missing_features}. Filling them with NaN would silently degrade "
+                        f"predictions instead of surfacing the mismatch."
+                    )
+                X = rows[feature_cols].copy()
+                # Encode with the TRAINING categories: LightGBM consumes categoricals by
+                # integer code, so re-deriving categories from these 5 counties alone would
+                # remap every county onto a different identity.
+                X["fips_code"] = bundle.encode_fips(X["fips_code"])
+                pred = np.clip(bundle.booster.predict(X), 0, 1)
 
-            # Blend toward persistence at short OPERATIONAL lead — `lead` here, not the
-            # `lead_hours` feature, which carries forecast age and is 12-36h for every
-            # Task B row. See blend.py for why the two axes diverge at serving time and
-            # why persistence wins below ~12h (held-out RMSE -3.9% in the 0-6h bucket,
-            # which is the whole of Task B).
-            if blend_weights:
-                pred = apply_blend(
-                    pred, rows["x_at_issue"].to_numpy(),
-                    np.full(len(rows), lead.total_seconds() / 3600), blend_weights,
-                )
+                # Blend toward persistence at short OPERATIONAL lead — the quarter's own
+                # lead here, not the `lead_hours` feature, which carries forecast age and
+                # is 12-36h for every Task B row. See blend.py for why the two axes
+                # diverge at serving time and why persistence wins below ~12h (held-out
+                # RMSE -3.9% in the 0-6h bucket, which is the whole of Task B).
+                if blend_weights:
+                    operational_lead = (lead + offset).total_seconds() / 3600
+                    pred = apply_blend(
+                        pred, rows["x_at_issue"].to_numpy(),
+                        np.full(len(rows), operational_lead), blend_weights,
+                    )
+                sub_predictions.append(pred)
+                if emitted_fips is None:
+                    emitted_fips = rows[["fips_code"]]
 
-            batch_out = rows[["fips_code"]].merge(counties[["fips_code", "county", "state"]], on="fips_code", how="left")
+            # One row per label: the instant for Task B, the mean of its four quarters
+            # for Task A.
+            pred = np.mean(sub_predictions, axis=0)
+
+            batch_out = emitted_fips.merge(counties[["fips_code", "county", "state"]], on="fips_code", how="left")
             batch_out["task_id"] = task_id
             batch_out["issue_time"] = issue_time.strftime("%Y-%m-%dT%H:%M:%SZ")
             batch_out["target_time"] = target_time.strftime("%Y-%m-%dT%H:%M:%SZ")
