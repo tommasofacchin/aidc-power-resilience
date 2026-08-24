@@ -47,3 +47,9 @@ desktop.ini
 # --- Editor ----------------------------------------------------------------
 .vscode/
 .idea/
+
+# --- Pacchetto di consegna --------------------------------------------------
+# Derivato da code/make_submission_package.py a partire dalla copia di lavoro:
+# rigenerabile in un secondo, e committarlo creerebbe una seconda copia del
+# codice che puo' divergere in silenzio da quella vera.
+dist/

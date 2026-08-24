@@ -326,31 +326,40 @@ Priorità assoluta: nessuna riga di modello finché non è certo che i dati arri
 
 ## 6. Checklist di conformità pre-consegna
 
+**Verificata voce per voce il 24 agosto 2026** contro `submission/predictions.csv` e
+`report/report.pdf` rigenerati quel giorno. Le voci CSV sono controllate da
+`code/validate_submission.py`, quindi non vanno rifatte a mano: vanno ri-eseguite.
+
 CSV:
-- [ ] `fips_code` stringa a 5 cifre con zeri iniziali preservati (verificare aprendo il file come testo, **mai** con Excel)
-- [ ] Tutti i timestamp ISO 8601 UTC con suffisso `Z`
-- [ ] Task A: esattamente 48 righe per (issue_time, contea); Task B: esattamente 24
-- [ ] Tutti i batch contengono **tutte e 5** le contee
-- [ ] Frequenza minima rispettata: ≥1 batch/giorno per A, ≥1 batch/6h per B
-- [ ] `predicted_x` ∈ [0,1], nessun NaN, nessuna notazione scientifica illeggibile
-- [ ] Nessuna deduplicazione dei target sovrapposti
-- [ ] Copertura completa della finestra 2025-09-01 → 2025-11-30
+- [x] `fips_code` stringa a 5 cifre con zeri iniziali preservati — verificato sul testo grezzo, non dopo il parsing
+- [x] Tutti i timestamp ISO 8601 UTC con suffisso `Z` — 65.880/65.880
+- [x] Task A: esattamente 48 righe per (issue_time, contea); Task B: esattamente 24
+- [x] Tutti i batch contengono **tutte e 5** le contee
+- [x] Frequenza minima rispettata — A: 92 batch, gap max 24h; B: 365 batch, gap max 6h
+- [x] `predicted_x` ∈ [0,1], nessun NaN, nessuna notazione scientifica — *questa era l'unica voce fallita*: pandas scriveva in notazione scientifica sotto 1e-4 (21.039 righe). `predict.py` ora scrive in virgola fissa e il validator lo segnala se ricapita
+- [x] Nessuna deduplicazione dei target sovrapposti — 475 target fuori finestra conservati, nessun duplicato su (task, issue, target, contea)
+- [x] Copertura completa della finestra 2025-09-01 → 2025-11-30 — 91/91 giorni
 
 Report:
-- [ ] 3–8 pagine, PDF
-- [ ] Acquisizione e preprocessing: scelta fonti, valori mancanti, allineamento timestamp, matching spaziale
-- [ ] Feature engineering e razionale
-- [ ] Architettura del modello e strategia di training
-- [ ] **Gestione dello sbilanciamento** (sezione esplicitamente richiesta)
-- [ ] Risultati sperimentali e **ablation**
-- [ ] **Dichiarazione di ogni fonte dati e relativa licenza** — EAGLE-I, Open-Meteo, ed eventuali altre. Le guidelines dicono testualmente che le omissioni non sono accettabili.
-- [ ] Giustificazione della scelta delle 5 contee
+- [x] 3–8 pagine, PDF — **8**, cioè al limite: ogni aggiunta va compensata
+- [x] Acquisizione e preprocessing (§3), feature e razionale (§4), modello e training (§5)
+- [x] **Gestione dello sbilanciamento** — §6, sezione dedicata come richiesto
+- [x] Risultati sperimentali e **ablation** — §7, Tabella 2
+- [x] **Dichiarazione fonti e licenze** — §9, Tabella 5, verificate alla fonte
+- [x] Giustificazione della scelta delle 5 contee — §2, Mecklenburg dichiarata come debolezza nota
 
 Codice:
-- [ ] Pipeline completa: acquisizione → preprocessing → feature → training → predizione
-- [ ] `requirements.txt` con versioni pinnate
-- [ ] README con configurazione ambiente, ordine di esecuzione, tempi attesi
-- [ ] Testato da zero in ambiente pulito
+- [x] Pipeline completa: acquisizione → preprocessing → feature → training → predizione
+- [x] `requirements.txt` con versioni pinnate (dirette + transitive risolte)
+- [x] README con configurazione ambiente, ordine di esecuzione, tempi attesi
+- [ ] **Testato da zero in ambiente pulito** — fatto il 22 agosto, ma contro l'archivio
+  pre-densificazione: certifica la pipeline, non questo `predictions.csv`. **Da rifare
+  prima della consegna.** (Il 24 agosto la riproduzione in loco — tabella, modello, pesi,
+  submission — è tornata byte-identica.)
+- [x] Le tre componenti obbligatorie arrivano insieme — `code/make_submission_package.py`
+  costruisce `dist/submission/` nella struttura suggerita dalle guidelines. **Si consegna
+  `dist/submission.zip`, non la cartella `submission/`**, che da sola manca della codebase
+  e quindi non verrebbe valutata.
 
 ---
 

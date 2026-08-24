@@ -318,7 +318,13 @@ if __name__ == "__main__":
 
     print(f"\nGenerated {len(predictions)} rows")
     out_path = SUBMISSION_DIR / ("predictions_smoke_test.csv" if args.smoke_test else "predictions.csv")
-    predictions.to_csv(out_path, index=False)
+    # Fixed-point rather than pandas' default float repr, which switches to scientific
+    # notation below 1e-4 and would render ~a third of the file as 9.95e-05. Every parser
+    # reads that correctly, so it is not a spec violation, but PLAN.md's pre-submission
+    # checklist asks for a file a reviewer can read without decoding exponents. Ten
+    # decimals is lossless here: predictions top out at 0.15 and the metric that scores
+    # them lives around 1e-2, so 1e-10 is far below anything that could matter.
+    predictions.to_csv(out_path, index=False, float_format="%.10f")
     print(f"Saved to {out_path}")
 
     print("\n=== Validating ===")

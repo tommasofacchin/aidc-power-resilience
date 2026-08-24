@@ -6,7 +6,8 @@ for the checklist this implements). Run before every submission attempt:
 
 Checks, each tied to a specific guideline requirement:
 - Schema: exact columns, fips_code is a 5-digit zero-padded string, timestamps are
-  ISO 8601 UTC with a 'Z' suffix, predicted_x in [0, 1] with no NaN.
+  ISO 8601 UTC with a 'Z' suffix, predicted_x in [0, 1] with no NaN and written in
+  fixed-point rather than scientific notation (a warning, not an error).
 - Row count per batch: Task A = 48 rows (issue_time, target_time) covering +1h..+48h;
   Task B = 24 rows covering +15m..+6h. Partial/truncated batches are non-compliant
   per the guidelines' explicit wording.
@@ -120,6 +121,16 @@ def check_schema(df: pd.DataFrame, result: ValidationResult) -> pd.DataFrame | N
     if len(out_of_range.dropna()):
         result.error(f"{len(out_of_range.dropna())} row(s) with predicted_x outside [0, 1] "
                       f"(min={px.min()}, max={px.max()})")
+
+    # A warning, not an error: the guidelines only require a float in [0, 1], and every
+    # parser reads 9.95e-05 correctly. But PLAN.md's checklist asks for no scientific
+    # notation, and pandas' default float repr produces it below 1e-4 unless the writer
+    # passes float_format — which is easy to lose in a refactor and invisible afterwards.
+    sci = df["predicted_x"].str.contains(r"[eE]", na=False)
+    if sci.any():
+        result.warn(f"{int(sci.sum())} row(s) render predicted_x in scientific notation "
+                    f"(e.g. {df.loc[sci, 'predicted_x'].iloc[0]}). Readable by any parser, "
+                    f"but predict.py is meant to write fixed-point — check float_format.")
 
     return df
 

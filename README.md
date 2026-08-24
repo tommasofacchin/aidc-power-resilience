@@ -120,6 +120,12 @@ python code/predict.py
 
 # 11. Format check against the guidelines checklist
 python code/validate_submission.py submission/predictions.csv
+
+# 12. Assemble what actually gets handed in -> dist/submission/ + dist/submission.zip
+#     Re-runs the validation above, checks the report's page count, and refuses to build
+#     if submission/report.pdf has drifted from report/report.pdf or if predictions.csv
+#     is older than the model bundle. dist/ is git-ignored and rebuilt from scratch.
+python code/make_submission_package.py
 ```
 
 Report artefacts, if the numbers in the report need regenerating:
@@ -208,13 +214,25 @@ repeated against the current archive before submission.
 │   ├── densification_probe.py # go/no-go on buying more training runs with the quota
 │   ├── report_numbers.py   # recomputes every number the report quotes
 │   ├── validate_submission.py
+│   ├── make_submission_package.py # assembles dist/ in the guidelines' layout
 │   └── requirements.txt
 ├── data/                   # git-ignored: raw downloads, caches, processed tables
 ├── docs/                   # competition rules and reference material
 ├── report/                 # report source (HTML), figures, built PDF
-├── submission/             # deliverables: predictions.csv, report.pdf
+├── submission/             # built deliverables: predictions.csv, report.pdf
+├── dist/                   # git-ignored: the assembled package, rebuilt on demand
 └── PLAN.md                 # internal working plan
 ```
+
+The guidelines ask for three components — report, predictions, and the complete codebase
+with this guide — and suggest a package with `code/` and `README.md` nested inside
+`submission/`. They live at the root here instead, because that is the working copy and a
+second copy inside `submission/` could drift from it without anyone noticing. Step 12
+above resolves the difference at the end: it derives `dist/submission/` in exactly the
+suggested layout, so what is handed in matches the guidelines and what is edited stays
+in one place. **Hand in `dist/submission.zip`, not the `submission/` folder** — that
+folder alone is missing the codebase, which the guidelines say makes a submission
+unscoreable.
 
 ## 6. Reproducibility notes
 
