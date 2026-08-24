@@ -369,11 +369,12 @@ Codice:
 - [x] Pipeline completa: acquisizione → preprocessing → feature → training → predizione
 - [x] `requirements.txt` con versioni pinnate (dirette + transitive risolte)
 - [x] README con configurazione ambiente, ordine di esecuzione, tempi attesi
-- [x] **Testato da zero in ambiente pulito** — rifatto il 24 agosto al commit `670b66c`
-  contro l'archivio corrente: clone in directory vuota fuori dal working tree, venv nuovo
-  da `requirements.txt`, `data/raw` dall'archivio, passi 3–12. Tutti gli artefatti tornano
-  byte-identici (MD5 nel README), `predict.py` non ha speso una sola chiamata API, e il
-  pacchetto si costruisce dal clone. ~26 minuti di calcolo.
+- [x] **Testato da zero in ambiente pulito** — rifatto il 24 agosto al commit `dd1f5b0`,
+  cioè dopo la conversione al denominatore di valutazione, contro l'archivio corrente:
+  clone in directory vuota fuori dal working tree, venv nuovo da `requirements.txt`,
+  `data/raw` dall'archivio, passi 3–12. Tutti e sette gli artefatti tornano byte-identici
+  (MD5 nel README), `predict.py` non ha speso una sola chiamata API, e il pacchetto si
+  costruisce dal clone.
 - [x] Le tre componenti obbligatorie arrivano insieme — `code/make_submission_package.py`
   costruisce `dist/submission/` nella struttura suggerita dalle guidelines. **Si consegna
   `dist/submission.zip`, non la cartella `submission/`**, che da sola manca della codebase

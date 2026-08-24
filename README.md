@@ -196,21 +196,15 @@ directory needs steps 7–11, about 31 minutes cold. Two clean-clone runs on the
 differed by up to 2x on the I/O-bound steps depending on what else was running, so read the
 column as an order of magnitude, not a stopwatch.
 
-**This was tested, not asserted.** On 24 August 2026, at commit `682c6f5`, the repository was
+**This was tested, not asserted.** On 24 August 2026, at commit `dd1f5b0`, the repository was
 cloned into an empty directory outside the working tree, a fresh virtualenv was built from
 `code/requirements.txt`, `data/raw` was supplied from the existing archive (steps 1, 2 and 6
 are downloads, and step 6 is quota-bound over days), and steps 3–12 were run in the order
 above. Every artefact came back **byte-identical** to the committed one:
 
-**Pending re-certification.** `submission/predictions.csv` changed after that run: step 10 now
-emits `predicted_x` in the grading denominator, so its MD5 below is the pre-conversion one and
-does not match the committed file. The clean-clone test is being re-run at the commit that
-introduced the change, and this block will be restated against it. Every other row still holds
-— nothing upstream of `predict.py`'s output boundary was touched.
-
 | Artefact | MD5 |
 |---|---|
-| `submission/predictions.csv` | `90f2ed5dd3ed8c8ba68ed392f4cf3c9d` (superseded) |
+| `submission/predictions.csv` | `42f9b1013847e46296b18066ef89a535` |
 | `data/processed/total_customers_reconciled.csv` | `534f2888c9bb03dfd206ec90d30937bb` |
 | `data/processed/selected_counties.csv` | `c406c65cd6e685641ab2567c2317e1b8` |
 | `data/processed/training_table_partial.parquet` | `f3118a0926e282d18a4432e4ec9056fd` |
