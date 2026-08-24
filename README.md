@@ -89,8 +89,9 @@ python code/preprocessing/reconcile_denominators.py
 python code/preprocessing/select_counties.py
 
 # 5. The 102-county stratified training sample -> data/processed/training_counties.csv
-#    This file is VERSIONED, and this step keeps it rather than re-deriving it: the
-#    archived forecast set under data/raw was downloaded for exactly these counties.
+#    This file is VERSIONED and ships inside the submission package at that same path,
+#    and this step keeps it rather than re-deriving it: the archived forecast set under
+#    data/raw was downloaded for exactly these counties.
 #    --refresh re-selects, and then step 6 has to fetch runs for whatever it adds.
 python code/preprocessing/select_training_sample.py
 
@@ -147,7 +148,11 @@ The report embeds the autumn figure; the reference-season one is kept because th
 together are what justify fitting the blend where we fit it.
 
 `report/report.pdf` is `report/report.html` printed to PDF by a headless Chromium — no
-manual step, and the output is byte-stable across runs:
+manual step. The rendering is deterministic, but the file is not reproducible byte for
+byte: Skia stamps `/CreationDate` and `/ModDate` into every print, so two runs over
+identical HTML differ. That is why the PDF is absent from the MD5 table below, and why
+step 12 compares `submission/report.pdf` against `report/report.pdf` rather than against
+a recorded hash.
 
 ```bash
 chrome --headless=new --disable-gpu --no-pdf-header-footer \
@@ -196,6 +201,13 @@ directory needs steps 7–11, about 31 minutes cold. Two clean-clone runs on the
 differed by up to 2x on the I/O-bound steps depending on what else was running, so read the
 column as an order of magnitude, not a stopwatch.
 
+**Re-run in progress at this commit.** The 30 November Task A batch added here changes
+`submission/predictions.csv` and nothing else — the model, the blend and every processed
+table are untouched, and the 65,880 rows that existed before are byte-identical inside the
+new file. The certification below therefore still holds for every artefact except the first
+row of the table, whose hash is the new file's; it is being re-run end to end at this commit
+and this paragraph will be replaced by the result.
+
 **This was tested, not asserted.** On 24 August 2026, at commit `dd1f5b0`, the repository was
 cloned into an empty directory outside the working tree, a fresh virtualenv was built from
 `code/requirements.txt`, `data/raw` was supplied from the existing archive (steps 1, 2 and 6
@@ -204,7 +216,7 @@ above. Every artefact came back **byte-identical** to the committed one:
 
 | Artefact | MD5 |
 |---|---|
-| `submission/predictions.csv` | `42f9b1013847e46296b18066ef89a535` |
+| `submission/predictions.csv` | `024b246847c4bc640a2ef00b7aa98f67` |
 | `data/processed/total_customers_reconciled.csv` | `534f2888c9bb03dfd206ec90d30937bb` |
 | `data/processed/selected_counties.csv` | `c406c65cd6e685641ab2567c2317e1b8` |
 | `data/processed/training_table_partial.parquet` | `f3118a0926e282d18a4432e4ec9056fd` |
@@ -238,7 +250,7 @@ against the pre-densification archive, is what surfaced the two defects describe
 │   ├── validate_submission.py
 │   ├── make_submission_package.py # assembles dist/ in the guidelines' layout
 │   └── requirements.txt
-├── data/                   # git-ignored: raw downloads, caches, processed tables
+├── data/                   # git-ignored except two pinned inputs (see below)
 ├── docs/                   # competition rules and reference material
 ├── report/                 # report source (HTML), figures, built PDF
 ├── submission/             # built deliverables: predictions.csv, report.pdf
@@ -256,6 +268,13 @@ in one place. **Hand in `dist/submission.zip`, not the `submission/` folder** �
 folder alone is missing the codebase, which the guidelines say makes a submission
 unscoreable.
 
+The package carries two files from under `data/` as well, at their repo-relative paths:
+`data/processed/training_counties.csv`, without which step 5 re-derives a different
+training sample and step 7 has no weather for the counties it adds (the note in section 6
+has that failure in full), and `data/processed/baseline_runs_20260822.json`, the frozen
+run list `densification_probe.py` compares against. Everything else under `data/` is
+downloaded or derived by the steps above.
+
 ## 6. Reproducibility notes
 
 **Causality.** Predictions for a given `issue_time` use only information available at that
@@ -266,9 +285,9 @@ just respected by construction. See [PLAN.md section 2.2](PLAN.md) for the mappi
 rationale.
 
 **The training sample is an input, not an output.** `data/processed/training_counties.csv`
-is the one versioned file under `data/`, because the archived forecast runs were fetched for
-exactly those 102 counties at a quota that makes fetching a different sample a multi-day
-operation. Left unversioned, a clean checkout re-derived a *different* sample from the
+is versioned here and shipped inside the submission package, because the archived forecast
+runs were fetched for exactly those 102 counties at a quota that makes fetching a different
+sample a multi-day operation. Left unversioned, a clean checkout re-derived a *different* sample from the
 climatology, and the counties it added had no weather: they merged to nothing and the
 pipeline trained on 59 counties while reporting success at every step. Step 7 now treats
 that mismatch as fatal, and step 5 will not overwrite the pinned file without `--refresh`.

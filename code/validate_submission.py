@@ -14,7 +14,10 @@ Checks, each tied to a specific guideline requirement:
 - County coverage: every batch contains all 5 reporting counties, nothing more,
   nothing less.
 - Issuance frequency: >=1 Task A batch per calendar day, >=1 Task B batch per 6h,
-  across the announced test window.
+  across the announced test window. Checked as slot coverage, not just as gaps between
+  consecutive issue_times: a submission that stops issuing before the window's last day
+  has no oversized gap anywhere, and a gap-only check (which is all this did
+  originally) passes it.
 - Test window coverage: every day of 2025-09-01..2025-11-30 has to be reachable by at
   least one batch's target_time range.
 
@@ -213,6 +216,44 @@ def check_batches(df: pd.DataFrame, expected_counties: set[str] | None, result: 
             )
 
 
+def check_issuance_coverage(df: pd.DataFrame, result: ValidationResult) -> None:
+    """Every issuance slot inside the test window holds at least one batch.
+
+    The guidelines state the minimum issuance frequency as a rate — one Task A batch per
+    calendar day, one Task B batch per 6h — and say it "applies across the announced test
+    window", i.e. 1 Sep to 30 Nov inclusive. The gap check in check_batches() is not the
+    same statement and misses one specific way of failing it: stop issuing before the end
+    of the window and every surviving gap is still exactly the required size. That is how
+    a Task A schedule ending on 29 November passed this validator, leaving 30 November —
+    a day inside the window — with no Task A issuance at all.
+
+    Slots are half-open and anchored at the window start; an issue_time earlier than the
+    window (which the guidelines expect, so the first day's targets are covered at short
+    lead) belongs to no slot and is simply not counted here.
+    """
+    for task_id, spec in TASK_SPEC.items():
+        task_df = df[df["task_id"] == task_id]
+        if task_df.empty:
+            continue  # already reported by check_batches
+        slots = pd.date_range(
+            TEST_WINDOW_START, TEST_WINDOW_END_EXCLUSIVE,
+            freq=spec["min_issuance_gap"], inclusive="left",
+        )
+        issue_times = pd.Series(sorted(task_df["issue_time"].unique()))
+        empty = [
+            slot for slot in slots
+            if not ((issue_times >= slot) & (issue_times < slot + spec["min_issuance_gap"])).any()
+        ]
+        if empty:
+            shown = [str(s) for s in empty[:5]]
+            result.error(
+                f"Task {task_id}: {len(empty)} issuance slot(s) of "
+                f"{spec['min_issuance_gap']} inside the test window contain no batch, "
+                f"below the required minimum frequency: {shown}"
+                f"{'...' if len(empty) > 5 else ''}"
+            )
+
+
 def check_test_window_coverage(df: pd.DataFrame, result: ValidationResult) -> None:
     in_window = df[
         (df["target_time"] >= TEST_WINDOW_START) & (df["target_time"] < TEST_WINDOW_END_EXCLUSIVE)
@@ -240,6 +281,7 @@ def validate(path: Path, expected_counties: set[str] | None = None) -> Validatio
         return result
     df = parse(df)
     check_batches(df, expected_counties, result)
+    check_issuance_coverage(df, result)
     check_test_window_coverage(df, result)
     return result
 

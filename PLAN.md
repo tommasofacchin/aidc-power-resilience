@@ -66,12 +66,23 @@ Horizon e risoluzione sono fissi: ogni batch deve contenere **l'insieme completo
 
 | Task | Issue times | Lead times | Righe/batch (5 contee) | N. batch |
 |---|---|---|---|---|
-| A | ogni giorno 00:00Z, dal **2025-08-30** al **2025-11-29** | +1h … +48h (48 step) | 240 | 92 |
+| A | ogni giorno 00:00Z, dal **2025-08-30** al **2025-11-30** | +1h … +48h (48 step) | 240 | 93 |
 | B | ogni 6h (00/06/12/18Z), dal **2025-08-31T18:00Z** al **2025-11-30T18:00Z** | +15m … +6h (24 step) | 120 | 365 |
 
 Le prime emissioni partono **prima** del 1° settembre perché servono a coprire i `target_time` del primo giorno della finestra (le righe fuori finestra semplicemente non vengono valutate).
 
-**Totale righe ≈ 65.900** (21.840 per A + 43.800 per B). Volume trascurabile.
+⚠️ **Rettifica del 24 agosto (sera).** La versione precedente di questa tabella faceva
+finire il Task A il **29 novembre**, cioè all'ultimo giorno il cui orizzonte +48h resta
+dentro la finestra. Ma la frequenza minima richiesta è *un batch per giorno di calendario*
+e vale **su tutta la finestra annunciata**, che finisce il 30: il 30 novembre restava senza
+nessuna emissione Task A. Nessun gap fra due `issue_time` consecutivi era però più largo di
+24h, quindi il controllo sui gap — l'unico che il validator faceva — non poteva vederlo.
+`validate_submission.py` ora verifica la **copertura degli slot**, non i gap, e
+`code/predict.py` emette anche il 30. Il batch non costa quota (usa il run 29 nov 12Z che il
+Task B di quel giorno già consuma) e 23 dei suoi 48 lead cadono dentro la finestra, a 1–23h
+invece delle 25–48h con cui il batch del 29 le copriva.
+
+**Totale righe: 66.120** (22.320 per A + 43.800 per B). Volume trascurabile.
 
 ⚠️ Target sovrapposti tra batch diversi sono **voluti** — non deduplicare. Lo scoring guarda l'accuratezza in funzione del lead time.
 
@@ -357,12 +368,12 @@ diventato buffer vero e non l'ultimo giorno utile.
 
 CSV:
 - [x] `fips_code` stringa a 5 cifre con zeri iniziali preservati — verificato sul testo grezzo, non dopo il parsing
-- [x] Tutti i timestamp ISO 8601 UTC con suffisso `Z` — 65.880/65.880
+- [x] Tutti i timestamp ISO 8601 UTC con suffisso `Z` — 66.120/66.120
 - [x] Task A: esattamente 48 righe per (issue_time, contea); Task B: esattamente 24
 - [x] Tutti i batch contengono **tutte e 5** le contee
-- [x] Frequenza minima rispettata — A: 92 batch, gap max 24h; B: 365 batch, gap max 6h
+- [x] Frequenza minima rispettata — A: 93 batch, uno per **ogni** giorno di calendario della finestra; B: 365 batch, uno per ogni slot da 6h. Verificata come copertura degli slot, non come gap fra emissioni consecutive: era il gap a nascondere il 30 novembre scoperto (vedi la rettifica in §2.1)
 - [x] `predicted_x` ∈ [0,1], nessun NaN, nessuna notazione scientifica — *questa era l'unica voce fallita*: pandas scriveva in notazione scientifica sotto 1e-4 (21.039 righe). `predict.py` ora scrive in virgola fissa e il validator lo segnala se ricapita
-- [x] Nessuna deduplicazione dei target sovrapposti — 475 target fuori finestra conservati, nessun duplicato su (task, issue, target, contea)
+- [x] Nessuna deduplicazione dei target sovrapposti — 600 target fuori finestra conservati, nessun duplicato su (task, issue, target, contea)
 - [x] Copertura completa della finestra 2025-09-01 → 2025-11-30 — 91/91 giorni
 
 Report:

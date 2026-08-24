@@ -6,7 +6,7 @@ that mapping matters; training (build_training_table.py) deliberately does not u
 (see that file's docstring for why that's not a train/serve inconsistency that matters).
 
 Schedule (PLAN.md section 2.1):
-- Task A: daily 00:00Z, 2025-08-30 .. 2025-11-29, lead +1h..+48h (48 rows/batch)
+- Task A: daily 00:00Z, 2025-08-30 .. 2025-11-30, lead +1h..+48h (48 rows/batch)
 - Task B: every 6h (00/06/12/18Z), 2025-08-31T18:00Z .. 2025-11-30T18:00Z,
   lead +15m..+6h (24 rows/batch)
 
@@ -84,7 +84,16 @@ SELECTED_COUNTIES_PATH = PROCESSED_DIR / "selected_counties.csv"
 BLEND_WEIGHTS_PATH = BUNDLE_DIR / "blend_weights.json"
 
 TASK_A_ISSUE_START = pd.Timestamp("2025-08-30T00:00:00")
-TASK_A_ISSUE_END = pd.Timestamp("2025-11-29T00:00:00")
+# The last calendar day of the test window, not the last day whose +48h horizon still
+# lands inside it. Those are different dates, and the difference is a compliance one:
+# the guidelines set a minimum issuance frequency of one Task A batch per calendar day
+# and say it applies "across the announced test window", which ends on 30 November.
+# Ending on the 29th left that day with no Task A issuance at all — every gap between
+# consecutive issue_times was still 24h, which is why a gap-based check never saw it.
+# The batch costs no quota (its run, 29 Nov 12Z, is the one Task B already uses that
+# day) and 23 of its 48 leads land inside the window, at 1-23h rather than the 25-48h
+# the 29th's batch covered them at.
+TASK_A_ISSUE_END = pd.Timestamp("2025-11-30T00:00:00")
 TASK_B_ISSUE_START = pd.Timestamp("2025-08-31T18:00:00")
 TASK_B_ISSUE_END = pd.Timestamp("2025-11-30T18:00:00")
 

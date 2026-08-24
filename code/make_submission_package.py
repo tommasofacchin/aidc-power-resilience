@@ -22,6 +22,7 @@ submission rather than a few points:
   - report.pdf is between 3 and 8 pages
   - report.pdf in submission/ matches report/report.pdf byte for byte
   - predictions.csv is not older than the model bundle that should have produced it
+  - every pinned input under data/processed/ is present to be copied in (see PINNED_DATA)
 """
 
 from __future__ import annotations
@@ -48,6 +49,20 @@ SOURCE_PDF = PROJECT_ROOT / "report" / "report.pdf"
 CODE_DIR = PROJECT_ROOT / "code"
 README = PROJECT_ROOT / "README.md"
 MODEL_BUNDLE = PROJECT_ROOT / "data" / "processed" / "model_bundle" / "model.txt"
+
+# data/ is git-ignored and rebuilt by the pipeline, with these exceptions: they are
+# inputs, not artifacts, and the package is unusable without them in a way that is
+# silent rather than loud. training_counties.csv pins the 102 counties the archived
+# forecast set was downloaded for — a reviewer without it re-derives a different sample
+# from the climatology, and the counties it adds have no weather (README section 6 has
+# the failure in full). baseline_runs_20260822.json is the frozen run list
+# densification_probe.py measures against and cannot be regenerated now that the runs
+# it predates have been added. Both are a few KB. They keep their repo-relative path
+# inside the package, so PROJECT_ROOT resolves them exactly as it does here.
+PINNED_DATA = [
+    Path("data") / "processed" / "training_counties.csv",
+    Path("data") / "processed" / "baseline_runs_20260822.json",
+]
 
 # Working files that are not part of the deliverable. `data/` is git-ignored and holds
 # gigabytes; it is not under code/ anyway, but the exclusions below are what keeps the
@@ -83,6 +98,9 @@ def preflight() -> list[str]:
     for path in (PREDICTIONS, SUBMITTED_PDF, SOURCE_PDF, README):
         if not path.exists():
             problems.append(f"missing: {show(path)}")
+    for relative in PINNED_DATA:
+        if not (PROJECT_ROOT / relative).exists():
+            problems.append(f"missing pinned input: {relative.as_posix()}")
     if problems:
         return problems
 
@@ -137,6 +155,10 @@ def build(make_zip: bool = True) -> None:
     shutil.copy2(PREDICTIONS, PACKAGE_DIR / "predictions.csv")
     shutil.copy2(README, PACKAGE_DIR / "README.md")
     n_code = copy_code(PACKAGE_DIR / "code")
+    for relative in PINNED_DATA:
+        destination = PACKAGE_DIR / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(PROJECT_ROOT / relative, destination)
 
     files = sorted(p for p in PACKAGE_DIR.rglob("*") if p.is_file())
     total = sum(p.stat().st_size for p in files)
@@ -144,6 +166,8 @@ def build(make_zip: bool = True) -> None:
           f"({n_code} under code/), {total / 1e6:.1f} MB")
     print(f"  report.pdf       {pdf_page_count(PACKAGE_DIR / 'report.pdf')} pages")
     print(f"  predictions.csv  {sum(1 for _ in (PACKAGE_DIR / 'predictions.csv').open(encoding='utf8')) - 1:,} rows")
+    for relative in PINNED_DATA:
+        print(f"  pinned input     {relative.as_posix()}")
 
     if make_zip:
         with zipfile.ZipFile(ZIP_PATH, "w", zipfile.ZIP_DEFLATED) as zf:
