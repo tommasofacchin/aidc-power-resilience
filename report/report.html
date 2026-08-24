@@ -148,7 +148,10 @@
 <p>
 The system predicts <code>x = customers_out / total_customers</code> for five US counties, at
 every lead time both tasks require, from archived ECMWF IFS HRES forecast runs plus the
-observed EAGLE-I outage history available at each issue time. It is a single LightGBM
+observed EAGLE-I outage history available at each issue time. The submitted <code>x</code> is a
+fraction of <code>MCC.csv</code> as published, the denominator the organizers confirmed on
+24 August that they grade against; the model trains on a repaired one, and Section&nbsp;3.4 is
+why both are necessary. It is a single LightGBM
 regressor with a Tweedie objective, one model covering both tasks, with lead time as an
 explicit feature, blended toward a persistence forecast by a weight fitted per lead
 bucket. The submitted file contains 65,880 rows: 92 daily Task A batches of hourly means and
@@ -210,7 +213,9 @@ opens, so the selection never looks at a month it will be scored on.
 
 <table>
   <caption>Table 1 &mdash; The five reporting counties. Activity statistics cover 1 Jan &ndash; 31 Aug 2025 at
-  15-minute resolution, 23,328 intervals per county. &ldquo;Significant&rdquo; means <code>x &gt; 0.01</code>.</caption>
+  15-minute resolution, 23,328 intervals per county. &ldquo;Significant&rdquo; means <code>x &gt; 0.01</code>.
+  &ldquo;Customers&rdquo; is the reconciled denominator of Section&nbsp;3.4, which the model trains on;
+  the submitted numbers are converted to MCC before they leave <code>predict.py</code>.</caption>
   <thead>
     <tr>
       <th>FIPS</th><th>County</th><th>State</th>
@@ -265,22 +270,19 @@ that by hand is not cherry-picking; refusing to correct for it would be.
 
 <div class="callout">
   <p>
-    One caveat we would rather state than bury. The ranking ran before the denominator
-    problems of Section&nbsp;3.4 were found, so it used <code>MCC.csv</code> throughout, and two
-    of the five were ranked on a wrong denominator. Mecklenburg's was too small by
-    20.9&times;, inflating every <code>x</code> we computed for it and carrying it into the
-    shortlist as the strongest mainland signal; corrected, it is the quietest of the five, its
-    significant-event rate falling from 13.8&nbsp;% to 0.4&nbsp;%. Arecibo's was too small by
-    4.7&times;, which is why its <code>x</code> saturated at 1.000; corrected,
-    43.5&nbsp;% &rarr; 15.2&nbsp;% and a maximum of 0.725. Table&nbsp;1 is recomputed
-    throughout. Arecibo survives the correction as the strongest county in the set;
-    Mecklenburg does not, and we kept it anyway. The regime argument that put it on the
-    shortlist &mdash; Piedmont, hurricane remnants inland, a large well-reported denominator
-    &mdash; is untouched by the arithmetic error, but a county that entered on a number we
-    later proved wrong is not there on the stated criterion, and no after-the-fact regime
-    argument changes that. Re-running the selection on corrected denominators is the right fix,
-    at roughly 185 archived forecast calls, and the selection code already takes the reconciled
-    table as its input. Read Mecklenburg as a selection we disclose, not one we defend.
+    One caveat we would rather state than bury. The ranking ran before the denominator work of
+    Section&nbsp;3.4 and used <code>MCC.csv</code> throughout, so two of the five were ranked on
+    a denominator we later found to be physically wrong: Mecklenburg's too small by
+    20.9&times;, which carried it in as the strongest mainland signal, and Arecibo's by
+    4.7&times;, which is why its <code>x</code> saturated at 1.000. On the repaired
+    denominators of Table&nbsp;1, Arecibo survives as the strongest county in the set
+    (43.5&nbsp;%&nbsp;&rarr;&nbsp;15.2&nbsp;% significant) and Mecklenburg becomes the quietest
+    (13.8&nbsp;%&nbsp;&rarr;&nbsp;0.4&nbsp;%). We kept it: the regime argument that shortlisted
+    it is untouched by the arithmetic, but a county that entered on a number we later corrected
+    is not there on the stated criterion. Read Mecklenburg as a selection we disclose, not one
+    we defend &mdash; with one thing added since. Those ranking numbers are MCC ratios, and MCC
+    is the unit the submission is scored in, so Mecklenburg's scored <code>x</code> is
+    genuinely active while its physical <code>x</code> is quiet. Both are facts about it.
   </p>
 </div>
 
@@ -373,59 +375,57 @@ submission, so it shaped the design. Two responses followed, both of which cost 
   </li>
 </ul>
 
-<h3>3.4 The denominator, which is the biggest uncontrolled risk in the submission</h3>
+<h3>3.4 The denominator: two of them, and which one the submission is written in</h3>
 
 <p>
 <code>x</code> is a ratio, so the customer count in its denominator multiplies every number we
-predict. The organizers maintain their own fixed reference value and do not publish it. We
-therefore have to pick a denominator and say clearly which one we picked.
+predict. For most of this project we took it that the organizers held a private reference
+value, which made the denominator the one uncontrolled risk in the submission. They do not.
+Asked whether scoring divides by <code>total_customers</code> exactly as <code>MCC.csv</code>
+gives it even where the recorded <code>customers_out</code> exceeds it, they answered on
+24 August: <em>&ldquo;even the official dataset could have mistake, when grading we will ignore
+such timestamp&rdquo;</em>, alongside an earlier <em>&ldquo;MCC.CSV in the first link is the
+total customer number listed in the fips code&rdquo;</em>. Only a grader dividing by MCC as
+published produces a timestamp worth ignoring, so that settles the unit: <strong>the submitted
+number is a fraction of MCC</strong>, and the intervals MCC makes impossible are dropped from
+scoring rather than repaired.
 </p>
 
 <p>
-The natural choice is <code>MCC.csv</code>, the modeled county customer file shipped with the
-EAGLE-I release. On 20 August we checked it, summing it per state against <code>coverage_history.csv</code>, an independent file
-from the same release that gives each state's total. MCC reproduces the state total to within a few percent almost everywhere. For
-North Carolina it lands at 1.82&nbsp;M against a published 5.30&nbsp;M, missing about two thirds of
-the state. Mecklenburg County, one of our five, carries 28,172 customers in MCC against
-588,615 in EAGLE-I's own 2024 annual file. Every <code>x</code> we had computed for Mecklenburg,
-in the training target and in the predictions, was inflated by a factor of 20.9.
+We still cannot train on it. Summed per state against <code>coverage_history.csv</code>, MCC
+reproduces the published state total to within a few percent almost everywhere &mdash; but
+North Carolina lands at 1.82&nbsp;M against 5.30&nbsp;M, and Mecklenburg, one of our five,
+carries 28,172 customers against 588,615 in EAGLE-I's own 2024 annual file: a factor of 20.9 on
+every <code>x</code> we computed for it. Switching wholesale to the 2024 column is wrong in the
+other direction, giving Arecibo 191,803 against MCC's 41,122 in a municipio of ~87,000
+residents. So the reconciled table takes each state's allocation from whichever candidate
+reproduces its published total more closely (Kansas, North Carolina and Texas move), then
+overrides that per county wherever the largest <code>customers_out</code> on record exceeds the
+chosen denominator &mdash; a ratio on [0,&nbsp;1] cannot have a numerator 3.4 times its divisor.
+That repairs <strong>149 counties</strong>, Arecibo among them; 111 more, where neither
+candidate holds the numerator, take the larger and are flagged <code>unresolved</code>
+(<code>data/processed/denominator_reconciliation.md</code>).
 </p>
 
 <p>
-The obvious fix &mdash; switch to the 2024 file's column &mdash; is wrong in the other direction
-elsewhere. Puerto Rico's state total agrees almost exactly between the two sources
-(1,485,262 against 1,485,249), but they allocate it differently across municipios: Arecibo
-is 41,122 in MCC and 191,803 in the 2024 file, against a resident population of roughly
-87,000. The 2024 figure implies more electricity customers than people. Neither source is
-uniformly right, so a blanket swap trades a broken North Carolina for a broken Puerto Rico.
+So the project carries two denominators. The reconciled one is what the target grid, the
+training table, the model and the blend all divide by: a target that saturates at
+<code>x&nbsp;=&nbsp;1</code> for the whole duration of a storm teaches the model that every
+large event is the same size. MCC as published is what the submission is read in. Since
+<code>x</code> is linear in the reciprocal of its denominator, converting between them is one
+constant per county applied in one place (<code>to_grading_units()</code> in
+<code>predict.py</code>): three of our five are multiplied by 1, Mecklenburg by 20.89 and
+Arecibo by 4.66.
 </p>
 
 <p>
-The rule we adopted is per state, not per county: for each state, take the county allocation
-from whichever candidate source reproduces that state's independently published total more
-closely, with ties going to MCC as the documented default. Per state, because the failure
-mode we observed is a whole-state one, and because a per-county rule would have no
-independent quantity to check itself against. Three states end up using the 2024 in-file
-allocation (Kansas, North Carolina, Texas) and the other 49 keep MCC. The full table is in
-<code>data/processed/denominator_reconciliation.md</code>. This still cannot be validated
-against the organizers' reference, which is precisely why it is written down here.
-</p>
-
-<p>
-A state total can be right while the allocation beneath it is wrong, and a per-state rule is
-blind to that. It kept MCC for Puerto Rico on a 13-customer agreement in 1.48&nbsp;M &mdash;
-and EAGLE-I records up to 139,095 customers out in Arecibo, against the 41,122 MCC says the
-municipio has in total. A ratio defined on [0,&nbsp;1] cannot have a numerator 3.4 times its
-denominator: the observed numerator <em>falsifies</em> that denominator, and 117 intervals in
-2025 were being clipped to <code>x&nbsp;=&nbsp;1</code> to conceal it. So a second check runs
-per county against the largest <code>customers_out</code> ever recorded, firing only where the
-data proves the chosen denominator impossible. It repairs <strong>149 counties</strong>,
-Arecibo among them (41,122&nbsp;&rarr;&nbsp;191,803); in 111 more neither candidate can hold
-the numerator, and those are flagged <code>unresolved</code> and take the larger. The
-population objection stands &mdash; 191,803 customers for ~87,000 residents is not a customer
-count either &mdash; which most plausibly means EAGLE-I's Puerto Rico rows report a service
-region, not the municipio they are keyed to. Both are wrong in absolute terms; only one is not
-arithmetically impossible.
+Until the answer came we had left the submission in reconciled units, on the argument that
+under-predicting <code>x</code> is the cheaper error on a target made mostly of zeros. That was
+wrong, measurably: on the equivalent autumn window of 2024 the grader discards only 1.7&nbsp;%
+of Mecklenburg's intervals and 0.2&nbsp;% of Arecibo's for exceeding 1, and across the rest the
+truth in MCC units averages 0.0151 and 0.0300 against the 0.00072 and 0.00643 we would have
+submitted &mdash; a systematic 21&times; and 4.7&times; under-prediction on two of the five
+counties.
 </p>
 
 <h3>3.5 Timestamp alignment and spatial matching</h3>
@@ -654,7 +654,9 @@ Unless stated otherwise, numbers below are on the forward-in-time held-out perio
 1&nbsp;May&nbsp;2025 (502,777 rows, of which 37,367 have observed <code>x</code> above 0.001),
 using a model that never saw a row from that period, with thresholds and category encodings
 fitted only on the earlier portion. Section&nbsp;7.1 then repeats the comparison on a
-seasonally matched autumn window, which is the one we would trust for the test period.
+seasonally matched autumn window, which is the one we would trust for the test period. Every
+error figure here is in the reconciled denominator of Section&nbsp;3.4, the unit the model is
+fitted in; the submitted file is converted to MCC per county before it is written.
 </p>
 
 <table>
@@ -947,9 +949,11 @@ Beyond the blend-weight caveat Section&nbsp;5.1 states and bounds, three smaller
 climatological quantiles are fitted on months rather than decades, so &ldquo;p99 gust&rdquo; here
 means &ldquo;p99 of what this county saw in the training window&rdquo;. Task B's weather is
 interpolated from hourly IFS output and contains no genuine sub-hourly information. And the
-denominator remains the largest uncontrolled risk: we predict a ratio whose divisor the
-organizers hold privately, and if their reference for a county differs from ours, our
-predictions for it are scaled wrong by exactly that factor however good the model is.
+denominator is now known rather than guessed, but knowing it does not make it right: MCC is
+too small for Mecklenburg and Arecibo, so their largest events push the ground truth above 1
+and leave the scored set entirely. The two counties with the most severe outages in our five
+are graded almost wholly on their quiet hours, and the scored subset is easier than the record
+we report skill on.
 </p>
 
 <h2>9. Data sources and licenses</h2>

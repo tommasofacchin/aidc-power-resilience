@@ -230,6 +230,38 @@ def load_total_customers() -> pd.DataFrame:
     return df[["fips_code", "total_customers"]]
 
 
+def load_published_total_customers() -> pd.DataFrame:
+    """Load MCC.csv exactly as published — the denominator the organisers grade against.
+
+    This is deliberately the *unreconciled* file, and it is not what the model trains
+    on. Two separate admin answers on the forum fix it as the grading denominator:
+
+        "regarding the total customer number, MCC.CSV in the first link is the total
+        customer number listed in the fips code"
+
+    and, asked directly whether MCC is used even for counties where the recorded
+    customers_out exceeds it — i.e. where the ground truth itself would come out above
+    1 — on 24 Aug 2026:
+
+        "Note even the official dataset could have mistake, when grading we will ignore
+        such timestamp"
+
+    That answer only makes sense if the grader divides by MCC as published: a
+    reconciled reference would never produce a timestamp to ignore. So MCC is the unit
+    the submitted numbers are read in, whatever it is worth as a customer count, and
+    the handful of timestamps it makes impossible are dropped from scoring rather than
+    repaired.
+
+    load_total_customers() stays the denominator everywhere else, because a target that
+    saturates at 1 for whole storms is not something to train on. predict.py converts
+    between the two at the output boundary; see the note there.
+    """
+    df = pd.read_csv(RAW_DIR / "MCC.csv", dtype={"County_FIPS": str})
+    df = df.rename(columns={"County_FIPS": "fips_code", "Customers": "total_customers"})
+    df["fips_code"] = df["fips_code"].str.zfill(5)
+    return df[["fips_code", "total_customers"]]
+
+
 if __name__ == "__main__":
     requested = [int(a) for a in sys.argv[1:]]
 

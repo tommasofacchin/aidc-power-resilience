@@ -31,6 +31,11 @@ signal comes from the autoregressive outage state, not from weather, which the m
 only uses as a slowly-varying risk envelope. If quota ever stops being scarce, reverting
 is a one-line change to task_b_run_time().
 
+predicted_x is emitted in the denominator the organisers grade against -- MCC.csv as
+published -- which is NOT the reconciled denominator everything upstream of the output
+divides by. The conversion is one constant per county and happens in exactly one place;
+see to_grading_units() for the constants and for the forum answer that fixes them.
+
 Autoregressive EAGLE-I features are computed from data at or before issue_time — this
 is legitimate per the submission guidelines (only the weather input is restricted to
 what a forecast could show; observed outage history is realistic, see PLAN.md 2.4) and
@@ -51,7 +56,12 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from data_acquisition.bulk_download_training_weather import fetch_with_retry
 from data_acquisition.county_coordinates import load_county_coordinates
-from data_acquisition.eagle_i import PROCESSED_DIR, load_total_customers, load_outage_events
+from data_acquisition.eagle_i import (
+    PROCESSED_DIR,
+    load_outage_events,
+    load_published_total_customers,
+    load_total_customers,
+)
 from data_acquisition.open_meteo import fetch_single_run
 from features.autoregressive import add_autoregressive_features
 from features.build_training_table import add_temporal_features
@@ -210,6 +220,67 @@ def build_autoregressive_for_issue(
     return at_issue.rename(columns={"run_start_time": "issue_time", "x": "x_at_issue"})
 
 
+def to_grading_units(predictions: pd.DataFrame, mcc: pd.DataFrame) -> pd.DataFrame:
+    """Rescale predicted_x from the reconciled denominator to MCC.csv as published.
+
+    Everything upstream of here — the target grid, the training table, the model, the
+    blend — divides customers_out by the reconciled denominator, because MCC is wrong
+    by up to 21x for some counties and a target that saturates at 1 for whole storms is
+    not something to fit. That reasoning is unchanged and is still the right way to
+    build the model (preprocessing/reconcile_denominators.py has the evidence).
+
+    It is not, however, the unit the submission is read in. Asked directly whether
+    scoring uses total_customers exactly as MCC.csv gives it even where the recorded
+    customers_out exceeds it, the organisers answered on 24 Aug 2026:
+
+        "Note even the official dataset could have mistake, when grading we will ignore
+        such timestamp"
+
+    — which settles it: the grader divides by MCC as published (nothing else could
+    produce a timestamp worth ignoring) and drops the timestamps that come out above 1.
+    So x is a ratio in *their* denominator, and a prediction in ours is simply in the
+    wrong units. Since x = customers_out / denominator is linear in 1/denominator, the
+    conversion is one constant per county:
+
+        predicted_x_published = predicted_x_reconciled * reconciled / published
+
+    Three of the five reporting counties reconcile to MCC already and are multiplied by
+    exactly 1. The other two are not small corrections: Mecklenburg x20.89 (28,172 vs
+    588,615) and Arecibo x4.66 (41,122 vs 191,803). Leaving them unconverted was not the
+    safe side of the argument it looked like — on autumn 2024, the grader ignores 1.7%
+    of Mecklenburg's intervals and 0.2% of Arecibo's for exceeding 1, and on all the
+    rest the truth in MCC units averages 0.0151 and 0.0300 against the 0.00072 and
+    0.00643 this pipeline would have submitted. That is a systematic 21x/4.7x
+    under-prediction across ~99% of the rows those two counties are actually scored on.
+
+    Clipping back into [0, 1] after the multiplication costs nothing here — the largest
+    converted prediction is ~0.58 — but it is kept because the guidelines require the
+    range and a future, more confident model could cross it on a county whose published
+    denominator is too small to hold the event.
+    """
+    reconciled = predictions["fips_code"].map(
+        mcc.set_index("fips_code")["total_customers"]
+    )
+    published = predictions["fips_code"].map(
+        load_published_total_customers().set_index("fips_code")["total_customers"]
+    )
+    missing = predictions.loc[reconciled.isna() | published.isna(), "fips_code"].unique()
+    if len(missing):
+        raise RuntimeError(
+            f"Missing a denominator for {sorted(missing)} — in the reconciled table, in "
+            f"MCC.csv, or in both. The conversion needs both to be numbers; without them "
+            f"the county goes out either as NaN or, worse, silently in the wrong unit."
+        )
+    factor = reconciled / published
+    print("")
+    print("Converting predicted_x to the grading denominator (MCC.csv as published):")
+    for fips, f in sorted(dict(zip(predictions["fips_code"], factor)).items()):
+        print(f"  {fips}  x{f:.4f}")
+    out = predictions.copy()
+    out["predicted_x"] = np.clip(out["predicted_x"] * factor, 0, 1)
+    return out
+
+
 def generate_predictions(schedule: pd.DataFrame, bundle: ModelBundle) -> pd.DataFrame:
     counties = load_reporting_counties()
     fips_codes = counties["fips_code"].tolist()
@@ -342,7 +413,7 @@ def generate_predictions(schedule: pd.DataFrame, bundle: ModelBundle) -> pd.Data
                 batch_out[["task_id", "fips_code", "county", "state", "issue_time", "target_time", "predicted_x"]]
             )
 
-    return pd.concat(batches, ignore_index=True)
+    return to_grading_units(pd.concat(batches, ignore_index=True), mcc)
 
 
 if __name__ == "__main__":
@@ -374,7 +445,7 @@ if __name__ == "__main__":
     # notation below 1e-4 and would render ~a third of the file as 9.95e-05. Every parser
     # reads that correctly, so it is not a spec violation, but PLAN.md's pre-submission
     # checklist asks for a file a reviewer can read without decoding exponents. Ten
-    # decimals is lossless here: predictions top out at 0.15 and the metric that scores
+    # decimals is lossless here: predictions top out below 0.6 and the metric that scores
     # them lives around 1e-2, so 1e-10 is far below anything that could matter.
     predictions.to_csv(out_path, index=False, float_format="%.10f")
     print(f"Saved to {out_path}")

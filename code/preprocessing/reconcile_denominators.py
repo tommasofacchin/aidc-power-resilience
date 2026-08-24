@@ -44,9 +44,15 @@ region rather than the municipio they are keyed to. Both candidates are then wro
 absolute terms, and the one that at least cannot be arithmetically impossible is the
 only defensible choice.
 
-The organisers keep their own fixed reference denominator and do not publish it, so this
-cannot be validated against the real thing -- which is exactly why the choice is written
-down here and reported, rather than left implicit in whichever file got loaded.
+What this table is NOT. It is not the denominator the submission is graded against. The
+organisers confirmed on 24 Aug 2026 that they divide by MCC.csv as published and simply drop
+the timestamps it makes impossible ("even the official dataset could have mistake, when
+grading we will ignore such timestamp"). This table is the denominator the *model* trains on,
+which is a different requirement: a target that saturates at x = 1 for the whole duration of
+a storm carries no information about how large the storm was. predict.py converts from this
+denominator to MCC at the output boundary, in one place, per county -- see to_grading_units()
+there. Writing the choice down here rather than leaving it implicit in whichever file got
+loaded is what makes that conversion checkable at all.
 """
 
 from __future__ import annotations

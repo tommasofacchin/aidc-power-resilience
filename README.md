@@ -116,6 +116,10 @@ python code/train.py
 python code/blend.py --season autumn
 
 # 10. Generate the submission -> submission/predictions.csv
+#     predicted_x leaves this step in the GRADING denominator (MCC.csv as published),
+#     not the reconciled one everything upstream divides by. The organisers confirmed on
+#     24 Aug 2026 that they score against MCC and drop the timestamps it makes
+#     impossible; to_grading_units() converts, one constant per county, in one place.
 python code/predict.py
 
 # 11. Format check against the guidelines checklist
@@ -198,9 +202,15 @@ cloned into an empty directory outside the working tree, a fresh virtualenv was 
 are downloads, and step 6 is quota-bound over days), and steps 3–12 were run in the order
 above. Every artefact came back **byte-identical** to the committed one:
 
+**Pending re-certification.** `submission/predictions.csv` changed after that run: step 10 now
+emits `predicted_x` in the grading denominator, so its MD5 below is the pre-conversion one and
+does not match the committed file. The clean-clone test is being re-run at the commit that
+introduced the change, and this block will be restated against it. Every other row still holds
+— nothing upstream of `predict.py`'s output boundary was touched.
+
 | Artefact | MD5 |
 |---|---|
-| `submission/predictions.csv` | `90f2ed5dd3ed8c8ba68ed392f4cf3c9d` |
+| `submission/predictions.csv` | `90f2ed5dd3ed8c8ba68ed392f4cf3c9d` (superseded) |
 | `data/processed/total_customers_reconciled.csv` | `534f2888c9bb03dfd206ec90d30937bb` |
 | `data/processed/selected_counties.csv` | `c406c65cd6e685641ab2567c2317e1b8` |
 | `data/processed/training_table_partial.parquet` | `f3118a0926e282d18a4432e4ec9056fd` |

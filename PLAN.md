@@ -162,7 +162,24 @@ Nota emersa durante l'esecuzione: ordinare per semplice conteggio di righe-event
 
 ### 2.7 Denominatore `total_customers`
 
-Le guidelines dicono che il valore di riferimento è **fissato e mantenuto dagli organizzatori** — noi non lo conosciamo. Usiamo `MCC.csv` (max customer count per contea) che accompagna il rilascio EAGLE-I, e **lo dichiariamo esplicitamente nel report**. È il rischio residuo più concreto sul punteggio ed è fuori dal nostro controllo.
+**Risolto il 24 agosto.** Per mesi abbiamo dato per scontato che il valore di riferimento
+fosse fissato dagli organizzatori e non pubblicato. Non è così: alla domanda diretta se lo
+scoring divida per `total_customers` esattamente come sta in `MCC.csv` anche dove il
+`customers_out` registrato lo supera, la risposta è stata *«even the official dataset could
+have mistake, when grading we will ignore such timestamp»*. Solo un grader che divide per MCC
+pubblicato può produrre un timestamp da ignorare, quindi l'unità è fissata: **il numero
+consegnato è una frazione di MCC**.
+
+Restano due denominatori, con due compiti diversi:
+
+- **riconciliato** (`total_customers_reconciled.csv`) — è quello su cui il modello si allena.
+  Un target che satura a `x = 1` per tutta la durata di una tempesta non dice al modello
+  quanto grande fosse la tempesta.
+- **MCC pubblicato** — è quello in cui la submission viene letta.
+
+La conversione è una costante per contea, applicata in un solo punto (`to_grading_units()` in
+`predict.py`): tre contee su cinque coincidono già con MCC (×1), Mecklenburg ×20,89 e Arecibo
+×4,66.
 
 ---
 
@@ -315,7 +332,7 @@ Priorità assoluta: nessuna riga di modello finché non è certo che i dati arri
 | Archivio IFS con buchi sulla finestra | **Bloccante** | Verificare il giorno 1. Fallback: run più vecchio disponibile + flag "stale forecast" come feature |
 | Multi-coordinate non supportato su single-runs | Basso | 5× chiamate, comunque trascurabile |
 | Rate limit più stretti del previsto | Medio | Caching aggressivo, download notturno in background |
-| `total_customers` diverso da quello degli organizzatori | Medio, **fuori controllo** | Usare MCC.csv, dichiararlo nel report |
+| ~~`total_customers` diverso da quello degli organizzatori~~ | **Chiuso il 24 ago** | Gli organizzatori valutano su MCC.csv pubblicato; `predict.py` converte nell'unità loro |
 | EAGLE-I con lacune di copertura sulle contee scelte | Medio | Criterio di selezione contee include la continuità della copertura |
 | Metrica di scoring ignota | Medio | Suite di metriche, non over-fittare su una sola |
 | Tempo insufficiente per il modello "bello" | Alto (5 giorni) | Baseline consegnabile già il giorno 2; ogni giorno successivo migliora qualcosa di già valido |
@@ -539,12 +556,25 @@ total customer number listed in the fips code»*. Delle nostre 5 contee **3 usan
   annuale 2024 (`infile`), perché il totale di stato della North Carolina in MCC copre
   circa un terzo del reale. Fattore **20,9×**. È l'unica esposizione vera.
 
-**Da chiedere sul forum** (l'admin invita esplicitamente a farlo): se la valutazione usa
-MCC.csv come denominatore anche dove il numeratore osservato lo supera — cioè dove x
-risulterebbe > 1 — o se esiste un riferimento riconciliato. Nel frattempo la scelta attuale
-è dalla parte prudente: se sbagliamo denominatore, sottostimare x costa meno che
-sovrastimarlo, perché su un target fatto al 70 % di zeri l'RMSE punisce molto di più la
-sovrastima.
+**Chiesto, e risposto lo stesso giorno.** Domanda: la valutazione usa MCC.csv come
+denominatore anche dove il numeratore osservato lo supera, cioè dove x risulterebbe > 1?
+Risposta di Haoyang Zhang: *«Note even the official dataset could have mistake, when grading
+we will ignore such timestamp»*. Cioè: sì, dividono per MCC pubblicato, e i timestamp che ne
+risultano impossibili escono dal punteggio invece di essere riparati.
+
+Questo ribalta la scelta precedente. L'argomento «sottostimare costa meno che sovrastimare»
+era sbagliato, e misurabilmente: sull'autunno 2024, il grader scarta solo l'1,7 % degli
+intervalli di Mecklenburg e lo 0,2 % di Arecibo perché superano 1; sul ~99 % che resta, la
+verità in unità MCC vale in media 0,0151 e 0,0300 contro lo 0,00072 e 0,00643 che avremmo
+consegnato. Non era una copertura prudente, era una sottostima sistematica di 21× e 4,7× su
+due contee su cinque, su quasi tutte le righe su cui vengono valutate.
+
+**Fatto:** `predict.py` converte `predicted_x` nell'unità del grader all'uscita
+(`to_grading_units()`), il modello continua ad allenarsi sul denominatore riconciliato, e la
+§3.4 del report racconta entrambi. Nota residua che vale la pena tenere presente: poiché MCC
+è troppo piccolo per quelle due contee, i loro eventi più grandi superano 1 e **escono dal
+set valutato** — le due contee con gli outage più severi vengono giudicate quasi solo sulle
+ore tranquille.
 
 ## Se avanza quota e tempo
 
