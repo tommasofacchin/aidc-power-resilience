@@ -319,9 +319,17 @@ Priorità assoluta: nessuna riga di modello finché non è certo che i dati arri
 
 ### Giorno 5 — lunedì 24 agosto: *buffer e consegna*
 
-- [ ] Rilettura del report, controllo che ogni sezione richiesta ci sia
-- [ ] Checklist di conformità §6
-- [ ] **Consegnare entro il pomeriggio**, non alle 23:58
+La scadenza è poi slittata al 31 agosto (annuncio admin del 21), quindi questo giorno è
+diventato buffer vero e non l'ultimo giorno utile.
+
+- [x] Rilettura del report, controllo che ogni sezione richiesta ci sia — rifatta il 24
+  agosto contro `docs/submission_guidelines_phase1-AIDC.docx` voce per voce: report §3
+  (acquisizione/preprocessing), §4 (feature), §5 (modello), §6 (sbilanciamento), §7
+  (risultati e ablation), §9 (fonti e licenze), §2 (giustificazione delle 5 contee)
+- [x] Checklist di conformità §6
+- [x] Pacchetto pronto: `dist/submission.zip`, struttura identica a quella suggerita in §5
+  delle guidelines
+- [ ] **Consegnare** — non fatto in automatico, va caricato a mano sul portale
 
 ---
 
@@ -583,9 +591,14 @@ ore tranquille.
    Sondare *una* chiamata prima di impegnare un budget:
    `--run-hours 6 --start 2024-09-01 --end 2024-09-01 --budget 1`.
    Se ci sono, l'autunno a 4 cicli vale 266 chiamate (~2,5 giorni).
-2. **Sostituzione di Mecklenburg** (93 chiamate). Chiude l'unica debolezza che il report
-   dichiara su di sé. Richiede anche di riscrivere la sezione 2 e di dare copertura di
-   training alla contea sostitutiva (~92 chiamate in più).
+2. ~~**Sostituzione di Mecklenburg** (93 chiamate + ~92 per la copertura di training).~~
+   **Scartata il 24 agosto, decisione presa.** Due motivi. Il primo è che la risposta
+   sul denominatore la riabilita in parte: i numeri con cui Mecklenburg era stata
+   selezionata sono rapporti MCC, ed è MCC l'unità in cui viene valutata, quindi il
+   criterio di selezione è soddisfatto nell'unità che conta. Il secondo è che sostituirla
+   vorrebbe dire riscrivere la §2 del report e rifare la copertura di training a pochi
+   giorni dalla consegna, per chiudere una debolezza che il report già dichiara apertamente.
+   Resta dichiarata, non difesa.
 3. **Meteo più fresco per Task B** (~91 chiamate). ~~Oggi Task B consuma una previsione
    vecchia 12–30 h per prevedere 15 minuti avanti.~~ **Scartato il 24 agosto, con i dati
    alla mano:** in `report_skill_by_lead_autumn.csv` a lead (0, 6] il blended coincide

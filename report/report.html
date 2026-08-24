@@ -379,8 +379,9 @@ submission, so it shaped the design. Two responses followed, both of which cost 
 
 <p>
 <code>x</code> is a ratio, so the customer count in its denominator multiplies every number we
-predict. For most of this project we took it that the organizers held a private reference
-value, which made the denominator the one uncontrolled risk in the submission. They do not.
+predict. The guidelines call that value &ldquo;fixed and maintained by the organizers&rdquo;,
+and for most of this project we read it as a number we would never see, which made the
+denominator the one uncontrolled risk in the submission. It is <code>MCC.csv</code>.
 Asked whether scoring divides by <code>total_customers</code> exactly as <code>MCC.csv</code>
 gives it even where the recorded <code>customers_out</code> exceeds it, they answered on
 24 August: <em>&ldquo;even the official dataset could have mistake, when grading we will ignore
