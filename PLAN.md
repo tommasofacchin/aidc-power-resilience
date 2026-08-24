@@ -1,7 +1,7 @@
 # Piano operativo — Huawei Tech Arena 2026, Topic 2 (Phase 1)
 
 **Aggiornato:** 19 agosto 2026
-**Deadline:** 24 agosto 2026, 23:59 CET → **5 giorni di lavoro**
+**Deadline:** 31 agosto 2026 (prorogata dal 24; annuncio admin del 21 agosto sul forum)
 **Obiettivo interno:** pacchetto completo pronto la sera del **23 agosto** (1 giorno di buffer).
 
 ---
@@ -387,7 +387,7 @@ Tutto questo torna in **Phase 2**, quando gli organizzatori pubblicheranno il da
 
 ---
 
-# Piano 23–30 agosto (scadenza prorogata al 30)
+# Piano 23–31 agosto (scadenza prorogata al 31)
 
 Scritto il 22 agosto, dopo che la traccia "fix sicuri" è stata chiusa e verificata
 (riproduzione da clone pulito identica bit-a-bit, `3f81222`). La submission attuale è
@@ -494,14 +494,13 @@ stump): corretti.
 rifatto lo stesso giorno contro l'archivio densificato: identico bit-a-bit su tutti e sei
 gli artefatti derivati. Il pacchetto `dist/submission.zip` è costruito e validato.
 
-**Sulla scadenza — da risolvere prima di rilassarsi.** L'intestazione di questo piano e
-`docs/rules.md` dicono entrambi **24 agosto 2026, 23:59 CET**, e il Q&A della diretta
-(`docs/livestream_transcript.txt`, riga 842) conferma esplicitamente il 24 per Topic 2,
-task A e B. La proroga al 30 è entrata in questo documento il 22 agosto (commit `444e7c0`)
-**senza citare una fonte**, e la memoria di progetto la dava per buona rimandando a questo
-file: un cerchio. Finché non salta fuori una comunicazione degli organizzatori che la
-attesti, **la scadenza operativa è il 24**. Consegnare oggi non costa nulla; sbagliarsi
-costa tutto.
+**Sulla scadenza — risolta il 24 agosto, con la fonte.** Messaggio di Morgane (admin) sul
+forum, 21 agosto: *«We've decided to extend the submission deadline from August 24th to
+August 31st. For those who have already submitted, you can revise your submission or keep
+it as it is.»* La proroga è dunque reale, ma **la data è il 31 agosto, non il 30**: la
+sezione qui sopra è stata scritta il 22 agosto con la data sbagliata e senza fonte, e la
+memoria di progetto la ripeteva. `docs/rules.md` e il Q&A della diretta dicono ancora 24
+agosto perché precedono l'annuncio. **Scadenza operativa: 31 agosto 2026.**
 
 ## Se avanza quota e tempo
 
