@@ -67,8 +67,11 @@ leave running unattended.
 
 ## 3. Execution order
 
+**Note: The trained model is included in the submission package at `data/processed/model_bundle/`. Do not retrain. Use the supplied model as-is to reproduce `predictions.csv`.**
+
 Steps 1–6 are the data pipeline, 7–9 the model, 10–11 the deliverables. Every step writes
-to `data/processed/` and is idempotent — re-running one does not invalidate the others.
+to `data/processed/` and is idempotent — re-running one does not invalidate the others. To
+reproduce predictions without retraining, skip steps 1–9 and run steps 10–11 directly.
 
 ```bash
 export PYTHONUTF8=1

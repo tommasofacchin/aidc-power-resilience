@@ -50,18 +50,24 @@ CODE_DIR = PROJECT_ROOT / "code"
 README = PROJECT_ROOT / "README.md"
 MODEL_BUNDLE = PROJECT_ROOT / "data" / "processed" / "model_bundle" / "model.txt"
 
-# data/ is git-ignored and rebuilt by the pipeline, with these exceptions: they are
-# inputs, not artifacts, and the package is unusable without them in a way that is
-# silent rather than loud. training_counties.csv pins the 102 counties the archived
-# forecast set was downloaded for — a reviewer without it re-derives a different sample
-# from the climatology, and the counties it adds have no weather (README section 6 has
-# the failure in full). baseline_runs_20260822.json is the frozen run list
-# densification_probe.py measures against and cannot be regenerated now that the runs
-# it predates have been added. Both are a few KB. They keep their repo-relative path
-# inside the package, so PROJECT_ROOT resolves them exactly as it does here.
+# data/ is git-ignored and rebuilt by the pipeline, with these exceptions:
+# - training_counties.csv and baseline_runs_20260822.json are inputs — the package is
+#   unusable without them in a way that is silent rather than loud. training_counties.csv
+#   pins the 102 counties the archived forecast set was downloaded for — a reviewer
+#   without it re-derives a different sample from the climatology, and the counties it
+#   adds have no weather (README section 6 has the failure in full).
+#   baseline_runs_20260822.json is the frozen run list densification_probe.py measures
+#   against and cannot be regenerated now that the runs it predates have been added.
+# - The model_bundle/ directory contains the exact trained model and fitted preprocessing
+#   that produced predictions.csv. Per the submission guidelines, reviewers must not
+#   retrain; they use the supplied model as-is.
 PINNED_DATA = [
     Path("data") / "processed" / "training_counties.csv",
     Path("data") / "processed" / "baseline_runs_20260822.json",
+    Path("data") / "processed" / "model_bundle" / "model.txt",
+    Path("data") / "processed" / "model_bundle" / "fips_categories.json",
+    Path("data") / "processed" / "model_bundle" / "blend_weights.json",
+    Path("data") / "processed" / "model_bundle" / "climatology.parquet",
 ]
 
 # Working files that are not part of the deliverable. `data/` is git-ignored and holds
