@@ -526,7 +526,9 @@ time in hours, county FIPS as a categorical, and the customer count.
 
 <p>
 One LightGBM regressor with <code>objective=regression</code>, 500 trees, learning rate 0.05,
-63 leaves, minimum 50 samples per leaf, 0.8 row and column subsampling. It does not predict
+63 leaves, minimum 50 samples per leaf, 0.8 column subsampling (a row-subsampling fraction
+is configured but inert, since LightGBM bags only when <code>bagging_freq</code> is set;
+every tree is grown on all rows). It does not predict
 <code>x</code>. It predicts the <strong>residual from persistence</strong>,
 <code>x(target) &minus; x(issue)</code>, and the submitted level is that residual added back to
 the observed state at issue time. Both tasks are served by the same model with lead time as a

@@ -71,13 +71,22 @@ CATEGORICAL_COLS = ["fips_code"]
 
 # L2 on a residual that is centred near zero, not Tweedie on a 69.9%-zero level — see
 # the module docstring for the measurement that motivated the change.
+#
+# `subsample` below is RECORDED BUT INERT, and deliberately left that way. LightGBM only
+# bags when `subsample_freq` (bagging_freq) is greater than zero, and it is not set here,
+# so the saved model carries `bagging_fraction: 0.8` alongside `bagging_freq: 0` and every
+# tree is grown on all rows. Verified on 28 Aug 2026: dropping the parameter reproduces
+# the predictions exactly, while adding `subsample_freq=1` does not (max prediction
+# difference 2.3e-2). Do not "fix" this by adding subsample_freq without retraining and
+# re-measuring — it would change the shipped model for a difference that measured inside
+# the seed-to-seed noise band (see the sweep recorded in PLAN.md).
 LGBM_PARAMS = dict(
     objective="regression",
     n_estimators=500,
     learning_rate=0.05,
     num_leaves=63,
     min_child_samples=50,
-    subsample=0.8,
+    subsample=0.8,        # inert without subsample_freq — see the note above
     colsample_bytree=0.8,
     random_state=42,
 )

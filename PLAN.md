@@ -711,3 +711,71 @@ una componente che ha skill propria invece di riparare una che non ne aveva.
 carica benissimo e predice numeri piccoli e plausibili — esattamente la classe di skew
 silenzioso per cui quel modulo esiste. I bundle scritti prima del 27 agosto si leggono come
 `level`, mai il contrario: il default opposto sommerebbe la persistenza due volte.
+
+---
+
+# 28 agosto — il modello è finito, e il perché è misurato
+
+Dopo la riformulazione, tentativo sistematico di spremere altro dal modello. **Esito: niente
+esce dal rumore.** Registrato qui perché è un risultato negativo utile: evita di rifarlo.
+
+## Cosa è stato provato, sull'holdout autunnale
+
+| variante | blended | graded (5 contee) |
+|---|---|---|
+| **spedita** (500 alberi, 63 foglie, lr 0,05) | 0,023188 | 0,049901 |
+| lr 0,03 con 1000 alberi | 0,023184 | 0,049333 |
+| 31 foglie | 0,023083 | 0,045649 |
+| min_child_samples 300 | 0,023441 | 0,057224 |
+| L2 = 10 | 0,023205 | 0,050028 |
+| colsample 0,5 | 0,023138 | 0,051214 |
+| delta troncato a ±0,30 | 0,023229 | 0,051015 |
+| ensemble di 5 semi | 0,023154 | 0,049600 |
+
+Le 31 foglie sembravano valere **−8,5 %** sulla metrica di grading. **Era rumore di un
+singolo seme**, e la trappola era ben nascosta: sull'autunno la curva per foglie fa
+0,0495 → 0,0483 → **0,0456** → 0,0498 → 0,0499, cioè un picco isolato e non un andamento;
+sulla finestra di riferimento l'ordine non si riproduce (31 è peggio di 15 e pari a 63); e
+mediando 5 semi il vantaggio sparisce.
+
+## Il pavimento di rumore, misurato
+
+Stessa configurazione, 8 semi diversi, metrica di grading sulle 5 contee:
+
+| foglie | media | sd | min | max | spread |
+|---|---|---|---|---|---|
+| 63 (spedita) | 0,051892 | 0,00221 | 0,048787 | 0,056238 | **14,4 %** |
+| 31 | 0,052139 | 0,00298 | 0,046821 | 0,055714 | **17,1 %** |
+
+**Su 5 contee, qualunque differenza sotto il ~15 % è indistinguibile dal seme.** Questo
+è il numero da tenere presente per ogni confronto futuro, e spiega perché il −27 % della
+riformulazione è credibile (è quattro volte fuori dalla banda) mentre un −8 % non lo è.
+
+Nota scomoda da tenere presente: il modello spedito (seme 42, 0,049901) sta **all'estremo
+fortunato** di quella distribuzione, la cui media è 0,051892. Il numero riportato non è
+sbagliato — è riproducibile bit-a-bit, il seme è fissato — ma è una realizzazione
+favorevole, non il valore atteso.
+
+L'ensemble di semi, che avrebbe rimosso quella lotteria, non aiuta: 1/3/5/10 semi danno
+0,049314 / 0,050320 / 0,049600 / 0,049784 sull'autunno e 0,033360 / 0,033079 / 0,033326 /
+0,033180 sul riferimento. Piatto su entrambe. Non vale il cambio di formato del bundle.
+
+## Un difetto trovato per caso: `subsample` è inerte
+
+`LGBM_PARAMS` contiene `subsample=0.8`, ma LightGBM fa bagging solo se `subsample_freq` > 0,
+che non è impostato. Il modello salvato porta `bagging_fraction: 0.8` **insieme a**
+`bagging_freq: 0`: ogni albero cresce su tutte le righe. Verificato — togliere il parametro
+riproduce le predizioni **esattamente**, aggiungere `subsample_freq=1` no (scarto massimo
+2,3e-2).
+
+Non è un bug del modello, è un **difetto di documentazione**: il report dichiarava «0.8 row
+and column subsampling», falso sulla metà «row». Corretto nel report; il parametro è lasciato
+dov'è con una nota in `train.py`, perché rimuoverlo cambierebbe i byte di `model.txt` (la
+stringa di configurazione salvata) senza cambiare una sola predizione, e gli MD5 nel README
+sono un'affermazione che vale la pena non invalidare per una pulizia cosmetica.
+
+## Conclusione operativa
+
+L'accuratezza è esaurita. Il margine che resta è sugli **altri quattro criteri** di
+valutazione (9-19 novembre): robustezza e generalizzazione, innovazione metodologica,
+documentazione e riproducibilità, presentazione. Vedi il commento su dove spendere il tempo.
