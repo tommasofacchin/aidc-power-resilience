@@ -152,9 +152,9 @@ observed EAGLE-I outage history available at each issue time. The submitted <cod
 fraction of <code>MCC.csv</code> as published, the denominator the organizers confirmed on
 24 August that they grade against; the model trains on a repaired one, and Section&nbsp;3.4 is
 why both are necessary. It is a single LightGBM
-regressor with a Tweedie objective, one model covering both tasks, with lead time as an
-explicit feature, blended toward a persistence forecast by a weight fitted per lead
-bucket. The submitted file contains 66,120 rows: 93 daily Task A batches of hourly means and
+regressor that predicts the residual from persistence rather than the level, one model
+covering both tasks, with lead time as an explicit feature, blended toward a plain
+persistence forecast by a weight fitted per lead bucket. The submitted file contains 66,120 rows: 93 daily Task A batches of hourly means and
 365 six-hourly Task B batches of 15-minute instants, five counties each, generated from 93
 distinct archived forecast runs. It is built from 388 forecast runs across 102 counties &mdash;
 2.80&nbsp;million rows &mdash; spanning September&nbsp;2024 to August&nbsp;2025, of which the
@@ -162,24 +162,27 @@ distinct archived forecast runs. It is built from 388 forecast runs across 102 c
 </p>
 
 <p>
-The honest headline is that the learned model contributes far less than the way it is
-combined with the observed outage state. Against an always-zero forecast, which is a
-strong baseline when 69.9&nbsp;% of the target values are exactly zero, the model alone
-reduces RMSE by 1.0&nbsp;% on the forward-in-time holdout and MAE by 5.6&nbsp;% on the rows
-that actually contain an outage. What it leans on hardest is the recent observed outage state
-(36&nbsp;% of total split gain); all weather together takes 28&nbsp;% across three feature
-groups, and county identity 20&nbsp;%.
+The result that shaped this submission is what the model is asked to predict. Predicting
+<code>x</code> directly under a Tweedie objective &mdash; the textbook choice for a non-negative
+target with an atom at zero &mdash; produced a model with almost no skill: on the seasonally
+matched autumn window it beat always-zero by 1.1&nbsp;%, its error barely varied with lead time,
+and its largest prediction anywhere was 0.18 against a truth reaching 1.0. Predicting instead
+the <strong>residual from persistence</strong> under squared loss takes the same features and
+hyperparameters to <strong>+30.1&nbsp;%</strong> and restores the full dynamic range. The
+diagnosis, in Section&nbsp;5, is that a log link on a target 69.9&nbsp;% exact zeros collapses
+toward a small constant.
 </p>
 
 <p>
-The result that changed the submission came last. Evaluated on a seasonally matched
-autumn window rather than on the late-spring holdout &mdash; Section&nbsp;7.1 &mdash; the same
-model alone is worth only 1.1&nbsp;% against always-zero, while blending it with
-persistence is worth <strong>30.4&nbsp;%</strong>. Autumn outages are multi-day
-storm-restoration events, so the observed state at issue time stays informative across
-the entire 48-hour Task A horizon; late-spring outages are convective and decay within
-hours. The blend weights were originally fitted in the wrong season, and refitting them
-in the right one is the single largest improvement in this submission.
+Two consequences run through the rest of this report. The blend with persistence, which
+previously supplied essentially all of the system's skill, is now worth 1.5 points on top of a
+model that works: its fitted persistence weights fall from
+1.00&nbsp;/&nbsp;1.00&nbsp;/&nbsp;0.95&nbsp;/&nbsp;0.90&nbsp;/&nbsp;0.55 to
+0.40&nbsp;/&nbsp;0.55&nbsp;/&nbsp;0.50&nbsp;/&nbsp;0.40&nbsp;/&nbsp;0.50, and the shortest
+bucket &mdash; the whole of Task B, two-thirds of the submitted rows &mdash; goes from pure
+carry-forward to 60&nbsp;% model. And the model's attention moves onto the weather: county
+identity falls from 19&nbsp;% of split gain to <strong>8.9&nbsp;%</strong> while all weather
+rises from 28&nbsp;% to <strong>42&nbsp;%</strong>.
 </p>
 
 <h2>2. Choosing the five counties</h2>
@@ -522,13 +525,29 @@ time in hours, county FIPS as a categorical, and the customer count.
 <h2>5. Model and training</h2>
 
 <p>
-One LightGBM regressor with <code>objective=tweedie</code> and
-<code>tweedie_variance_power=1.5</code>, 500 trees, learning rate 0.05, 63 leaves, minimum 50
-samples per leaf, 0.8 row and column subsampling. The Tweedie family is the natural fit for a
-non-negative continuous target with a point mass at zero, which is what <code>x</code> is; it
-handles the zero inflation inside the objective rather than by gluing two models together.
-Both tasks are served by the same model with lead time as a feature, since a per-task split
-would halve the training data for no structural reason.
+One LightGBM regressor with <code>objective=regression</code>, 500 trees, learning rate 0.05,
+63 leaves, minimum 50 samples per leaf, 0.8 row and column subsampling. It does not predict
+<code>x</code>. It predicts the <strong>residual from persistence</strong>,
+<code>x(target) &minus; x(issue)</code>, and the submitted level is that residual added back to
+the observed state at issue time. Both tasks are served by the same model with lead time as a
+feature, since a per-task split would halve the training data for no structural reason.
+</p>
+
+<p>
+This replaced a Tweedie head on the level, and it is the largest single improvement in this
+submission. That head had almost no skill: on the autumn holdout it beat always-zero by
+3.8&nbsp;% in the 0&ndash;6&nbsp;h bucket, its RMSE barely moved across lead time (0.032824 at
+6&nbsp;h, 0.033754 at 72&nbsp;h &mdash; a model no longer conditioning on the present), and its
+largest prediction anywhere was 0.18 against a truth reaching 1.0. The cause is the objective,
+not the features: Tweedie carries a log link, and on a target 69.9&nbsp;% exact zeros the fitted
+response collapses toward a small constant, so <code>x_at_issue</code> being the highest-gain
+feature did not mean the model could reproduce it. The residual target removes that by
+construction &mdash; centred near zero, squared loss appropriate, persistence recovered exactly
+when the model outputs zero. Measured on the same holdout in the grading denominator over the
+five reporting counties, after the organizers' rule dropping timestamps whose truth exceeds 1,
+pooled RMSE falls from 0.068473 to <strong>0.049901, a 27.1&nbsp;% reduction</strong>. Extra
+capacity does not help &mdash; 1,500 trees at 127 leaves and 3,000 at 255 are both worse than
+500/63 &mdash; as expected if the objective was the binding constraint.
 </p>
 
 <p>
@@ -543,13 +562,13 @@ million trained on.
 
 <p>
 Two decisions came out of bugs rather than design. There is no early stopping: an earlier
-version registered no validation set through a keyword-name error, stopped after 25 of 500
-trees and deployed a stump whose maximum prediction was 0.012 against today's 0.056 &mdash; no
-dynamic range, unable to signal a severe event. We removed early stopping rather than repair
-the wiring, because stopping on the validation set and then reporting metrics on it would make
-every number here optimistic. And the model ships as a bundle with the fitted state its
-features depend on (FIPS category ordering, climatology thresholds): re-deriving either at
-prediction time silently answers a different question.
+version registered no validation set through a keyword-name error, stopped after 25 of 500 trees
+and deployed a stump with a maximum prediction of 0.012 against today's 0.297. We removed early
+stopping rather than repair the wiring, because stopping on the validation set and then
+reporting metrics on it would make every number here optimistic. And the model ships as a bundle
+carrying the fitted state its features depend on &mdash; FIPS category ordering, climatology
+thresholds, and now which quantity the booster predicts &mdash; because re-deriving any of them
+at prediction time silently answers a different question.
 </p>
 
 <h3>5.1 Blending with persistence, and the season it is fitted in</h3>
@@ -575,46 +594,38 @@ predicts less.
 </p>
 
 <p>
-<em>Which</em> held-out period the weights are fitted on turned out to matter far more than the
-blend itself. Fitted on the forward-in-time split, which lands in May to August, the weights
-come out at 0.85 / 0.55 / 0.40 / 0.30 / 0.10 across the five lead buckets: persistence loses
-the prediction quickly, and keeps a tenth of it beyond two days. Fitted by the identical
-procedure on the autumn holdout described in Section&nbsp;7.1, they come out at
-<strong>1.00 / 1.00 / 0.95 / 0.90 / 0.55</strong> &mdash; persistence is worth more at every
-lead, takes the two shortest buckets outright, and is still worth over half the prediction two
-to three days out. The reason is physical rather
-than statistical: late-spring outages are short convective events that decay within hours, so
-yesterday's state says little about tomorrow, whereas autumn outages are storm-restoration
-events lasting days.
+<em>Which</em> held-out period the weights are fitted on still matters, though less than it did
+when the blend was carrying the whole system. Fitted on the forward-in-time split, which lands
+in May to August, the weights come out at 0.75 / 0.65 / 0.75 / 0.80 / 0.70 across the five lead
+buckets. Fitted by the identical procedure on the autumn holdout described in
+Section&nbsp;7.1, they come out at <strong>0.40 / 0.55 / 0.50 / 0.40 / 0.50</strong> &mdash;
+that is, in the season being scored the model is the stronger component nearly everywhere, and
+persistence is worth about half the prediction rather than all of it.
 </p>
 
 <p>
-The two weight sets are worth very different amounts in the season that will be scored.
-Measured on the autumn window, where always-zero scores RMSE 0.033903 and the model alone
-0.033516 (&minus;1.1&nbsp;%), the spring-fitted weights reach 0.028255 (&minus;16.7&nbsp;% against
-always-zero) and the autumn-fitted weights 0.023580
-(<strong>&minus;30.4&nbsp;%</strong>). Back on the May&ndash;August split the ordering reverses and
-the autumn weights give up 6.1 points of skill &mdash; in a season the submission is never scored
-in. We therefore ship the autumn-fitted weights. They are fitted against a model retrained on
-2025 alone, never against the deployed model: the deployed model was trained on the autumn rows,
-so its predictions there are in-sample and would have understated exactly what this measures.
+Under the Tweedie head these weights were 1.00 / 1.00 / 0.95 / 0.90 / 0.55 &mdash; persistence
+took the two shortest buckets <em>outright</em>, so the whole of Task B was a pure carry-forward.
+On the autumn window the spring-fitted weights reach 0.026524 and the autumn-fitted 0.023188
+(<strong>+31.6&nbsp;%</strong> against always-zero); out of season the autumn weights now cost
+nothing. They are fitted against a model retrained on 2025 alone, never against the deployed
+model, whose autumn predictions are in-sample and would have understated what this measures.
 </p>
 
 <p>
-We expected the carry-forward itself to be the weak part, and it is not. Rather than assert
-that a county with 4&nbsp;% of customers out now still has 4&nbsp;% out in two days, the fit
-searches an exponential restoration decay jointly with the weight, flat being one candidate
-half-life among thirteen. It picks a decay in four buckets of five, but at half-lives of
-72&ndash;96&nbsp;h and worth 0.06&nbsp;% overall (0.023580, against 0.023594 refitted flat):
-chosen and almost worthless, which reads the same way physically &mdash; autumn outages are
-multi-day restorations, so the state genuinely persists across the horizon.
+The carry-forward decay now earns its place, where before it was chosen and almost worthless.
+Rather than assert that a county with 4&nbsp;% of customers out now still has 4&nbsp;% out in two
+days, the fit searches an exponential restoration decay jointly with the weight. It picks one in
+the two longest buckets, at half-lives of 96&nbsp;h and 48&nbsp;h, worth
+<strong>1.07&nbsp;%</strong> overall against 0.06&nbsp;% under the previous head; restricted to
+flat carry-forward it would drop persistence to 0.20 and 0.00 there rather than decay it.
 </p>
 
 <p>
 One caveat we would rather state than bury: autumn 2024 contains Helene and Milton, so these
-weights would be too persistence-heavy for an unusually quiet autumn. The downside is bounded
-&mdash; during calm periods <code>x_at_issue</code> is approximately zero, so a heavy
-persistence weight shrinks predictions toward zero, the direction this target rewards anyway.
+weights would be too persistence-heavy for an unusually quiet autumn. The downside is bounded,
+since during calm periods <code>x_at_issue</code> is near zero and a heavy persistence weight
+shrinks predictions toward zero, the direction this target rewards anyway.
 </p>
 
 <h2>6. Handling the class imbalance</h2>
@@ -627,9 +638,12 @@ competitor on MAE rather than a strawman. We address this in four places.
 </p>
 
 <p>
-The objective absorbs the zero mass directly: Tweedie with a variance power of 1.5 is a
-compound Poisson-gamma, which is a distribution with an atom at zero and a continuous positive
-part, so the model is not being asked to fit a point mass with a Gaussian.
+The target formulation removes the zero mass rather than modelling it. Because the model predicts
+<code>x(target) &minus; x(issue)</code>, most zero rows are ones where the county was
+<em>already</em> at zero and stays there, entering the objective as a residual of zero rather
+than as a point mass the response must reproduce. The previous Tweedie head instead absorbed the
+zero mass inside a compound Poisson-gamma objective &mdash; the textbook fit for a target with
+an atom at zero &mdash; and in practice collapsed toward a small constant (Section&nbsp;5).
 </p>
 
 <p>
@@ -677,90 +691,89 @@ fitted in; the submitted file is converted to MCC per county before it is writte
   <tbody>
     <tr>
       <td>always zero</td>
-      <td class="num">0.001078</td><td class="num">0.010663</td><td class="num">0.013801</td>
-      <td class="num">0.000</td><td class="num">+1.05&nbsp;%</td>
+      <td class="num best">0.001078</td><td class="num">0.010663</td><td class="num">0.013801</td>
+      <td class="num">0.000</td><td class="num">&minus;0.68&nbsp;%</td>
     </tr>
     <tr>
       <td>persistence (<code>x</code> at issue time)</td>
       <td class="num">0.001554</td><td class="num">0.011963</td><td class="num">0.013634</td>
-      <td class="num">0.309</td><td class="num">+13.37&nbsp;%</td>
+      <td class="num">0.309</td><td class="num">+11.44&nbsp;%</td>
     </tr>
     <tr>
       <td>per-county climatology</td>
       <td class="num">0.002620</td><td class="num">0.011759</td><td class="num">0.013320</td>
-      <td class="num">0.042</td><td class="num">+11.44&nbsp;%</td>
+      <td class="num">0.042</td><td class="num">+9.54&nbsp;%</td>
     </tr>
     <tr class="rowgroup">
-      <td><strong>full model (Tweedie)</strong></td>
-      <td class="num">0.001247</td><td class="num">0.010552</td><td class="num">0.013024</td>
-      <td class="num">0.056</td><td class="num">&mdash;</td>
+      <td><strong>full model (delta)</strong></td>
+      <td class="num">0.002102</td><td class="num">0.010735</td><td class="num best">0.012799</td>
+      <td class="num">0.297</td><td class="num">&mdash;</td>
     </tr>
     <tr>
       <td>&minus; raw forecast fields</td>
-      <td class="num">0.001240</td><td class="num">0.010550</td><td class="num">0.013067</td>
-      <td class="num">0.117</td><td class="num">&minus;0.02&nbsp;%</td>
+      <td class="num">0.001921</td><td class="num">0.010681</td><td class="num">0.012645</td>
+      <td class="num">0.316</td><td class="num">&minus;0.50&nbsp;%</td>
     </tr>
     <tr>
       <td>&minus; derived weather</td>
-      <td class="num">0.001232</td><td class="num">0.010565</td><td class="num">0.013014</td>
-      <td class="num">0.039</td><td class="num">+0.12&nbsp;%</td>
+      <td class="num">0.002161</td><td class="num">0.011028</td><td class="num">0.012856</td>
+      <td class="num">0.311</td><td class="num">+2.73&nbsp;%</td>
     </tr>
     <tr>
       <td>&minus; climatological exceedance</td>
-      <td class="num">0.001235</td><td class="num">0.010537</td><td class="num">0.012905</td>
-      <td class="num">0.067</td><td class="num">&minus;0.15&nbsp;%</td>
+      <td class="num">0.002091</td><td class="num">0.010939</td><td class="num">0.012721</td>
+      <td class="num">0.306</td><td class="num">+1.90&nbsp;%</td>
     </tr>
     <tr>
-      <td>&minus; autoregressive state</td>
-      <td class="num">0.001244</td><td class="num">0.010584</td><td class="num">0.013094</td>
-      <td class="num">0.069</td><td class="num">+0.30&nbsp;%</td>
+      <td>&minus; autoregressive state <em>and persistence base</em></td>
+      <td class="num">0.002027</td><td class="num">0.011031</td><td class="num">0.013236</td>
+      <td class="num">0.134</td><td class="num">+2.75&nbsp;%</td>
     </tr>
     <tr>
       <td>&minus; temporal encodings</td>
-      <td class="num">0.001291</td><td class="num">0.010458</td><td class="num">0.012683</td>
-      <td class="num">0.153</td><td class="num">&minus;0.89&nbsp;%</td>
+      <td class="num">0.002404</td><td class="num">0.012247</td><td class="num">0.013253</td>
+      <td class="num">0.307</td><td class="num">+14.08&nbsp;%</td>
     </tr>
     <tr>
       <td>&minus; static county features</td>
-      <td class="num">0.001205</td><td class="num">0.010495</td><td class="num">0.012807</td>
-      <td class="num">0.055</td><td class="num">&minus;0.54&nbsp;%</td>
+      <td class="num">0.001941</td><td class="num best">0.010463</td><td class="num">0.012677</td>
+      <td class="num">0.276</td><td class="num">&minus;2.54&nbsp;%</td>
     </tr>
     <tr class="rowgroup">
       <td>hurdle, <code>&tau; = 0</code></td>
-      <td class="num best">0.001069</td><td class="num">0.010550</td><td class="num">0.013226</td>
-      <td class="num">0.064</td><td class="num">&minus;0.02&nbsp;%</td>
+      <td class="num">0.001069</td><td class="num">0.010550</td><td class="num">0.013226</td>
+      <td class="num">0.064</td><td class="num">&minus;1.72&nbsp;%</td>
     </tr>
     <tr>
       <td>hurdle, <code>&tau; = 0.001</code></td>
-      <td class="num">0.001147</td><td class="num best">0.010522</td><td class="num best">0.012933</td>
-      <td class="num">0.091</td><td class="num">&minus;0.29&nbsp;%</td>
+      <td class="num">0.001147</td><td class="num">0.010522</td><td class="num">0.012933</td>
+      <td class="num">0.091</td><td class="num">&minus;1.99&nbsp;%</td>
     </tr>
   </tbody>
 </table>
 
 <p>
-The full model beats all three baselines on RMSE and on event-restricted MAE, and loses to
-always-zero on pooled MAE by a hair. That last point is not a defect, it is what pooled MAE
-measures on a target that is seven-tenths zeros: predicting a small positive number
-everywhere costs MAE on 322,016 zero rows to buy accuracy on 37,367 event rows. Per-county
-climatology is the strongest of the naive baselines on RMSE, which is itself informative &mdash;
-a large part of what any model can learn here is simply that some counties break more often
-than others.
+Read this table knowing which window it is: May&ndash;August, the calm season, where always-zero
+is very hard to beat and even plain persistence scores <em>worse</em> than predicting nothing
+(0.011963 against 0.010663). The full model wins the one column that is about outages rather
+than zeros &mdash; event-restricted MAE, 0.012799, the best in the table &mdash; and gives up
+0.68&nbsp;% of pooled RMSE to always-zero, because predicting a small positive number everywhere
+costs MAE on 465,410 zero rows to buy accuracy on 37,367 event rows. Section&nbsp;7.1 repeats
+this on the autumn window, where the ordering is not close.
 </p>
 
 <p>
-The ablations are modest across the board and we are not going to dress them up; on the
-densified table they are smaller than they were. Only two groups still cost anything to remove:
-the autoregressive state (+0.30&nbsp;%) and derived weather (+0.12&nbsp;%). Raw forecast fields
-(&minus;0.02&nbsp;%) and climatological exceedance (&minus;0.15&nbsp;%) are noise, and temporal
-encodings (&minus;0.89&nbsp;%) and static county features (&minus;0.54&nbsp;%) come out
-<em>negative</em>: the model is measurably better on this split without them. We keep them, for
-two reasons. This split lands in May&ndash;August while every row the densification added is
-autumn, so an ablation scored here asks what autumn data does for a late-spring holdout, which
-is not the question the submission is scored on. And when feature groups are correlated,
-dropping one lets its neighbours absorb it, which makes the split-gain share the better guide
-to what the model actually uses: the observed outage state takes 36&nbsp;% of total split gain,
-county identity 20&nbsp;%, and all weather together 28&nbsp;%.
+The ablations are no longer marginal, itself a consequence of the reformulation: a model with
+genuine skill has something to lose when a group is removed. Temporal encodings dominate at
++14.08&nbsp;%; the autoregressive block &mdash; removed here <em>together with</em> the
+persistence base, since <code>x_at_issue</code> enters the deployed system both as a feature and
+as the level the residual is added to &mdash; costs +2.75&nbsp;%, alongside derived weather at
++2.73&nbsp;% and climatological exceedance at +1.90&nbsp;%. That autoregressive figure looks
+small only because of the window: in a calm season the state at issue time is usually zero, the
+same fact that puts persistence below always-zero two rows up. Raw forecast fields
+(&minus;0.50&nbsp;%) and static county features (&minus;2.54&nbsp;%) come out negative; we keep
+both, since correlated groups let neighbours absorb what is dropped, which makes the split-gain
+share the better guide.
 </p>
 
 <table>
@@ -769,28 +782,27 @@ county identity 20&nbsp;%, and all weather together 28&nbsp;%.
     <tr><th>Feature</th><th class="num">Gain share</th><th>Group</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>x_at_issue</code></td><td class="num">22.5&nbsp;%</td><td>autoregressive</td></tr>
-    <tr><td><code>fips_code</code></td><td class="num">19.4&nbsp;%</td><td>static</td></tr>
-    <tr><td><code>doy_sin</code></td><td class="num">11.1&nbsp;%</td><td>temporal</td></tr>
-    <tr><td><code>precip_cum_24h</code></td><td class="num">10.2&nbsp;%</td><td>derived weather</td></tr>
-    <tr><td><code>x_max_24h</code></td><td class="num">5.8&nbsp;%</td><td>autoregressive</td></tr>
-    <tr><td><code>x_lag_1h</code></td><td class="num">5.1&nbsp;%</td><td>autoregressive</td></tr>
+    <tr><td><code>x_at_issue</code></td><td class="num">11.4&nbsp;%</td><td>autoregressive</td></tr>
+    <tr><td><code>doy_sin</code></td><td class="num">10.4&nbsp;%</td><td>temporal</td></tr>
+    <tr><td><code>fips_code</code></td><td class="num">8.9&nbsp;%</td><td>static</td></tr>
+    <tr><td><code>gust_clim_p999</code></td><td class="num">7.7&nbsp;%</td><td>climatology</td></tr>
+    <tr><td><code>gust_clim_p95</code></td><td class="num">6.4&nbsp;%</td><td>climatology</td></tr>
+    <tr><td><code>x_lag_1h</code></td><td class="num">5.5&nbsp;%</td><td>autoregressive</td></tr>
     <tr><td><code>doy_cos</code></td><td class="num">4.0&nbsp;%</td><td>temporal</td></tr>
   </tbody>
 </table>
 
 <p>
-Two readings were available when the training window held no hurricane at all: either
-county-level outage rates are mostly a property of the utility and the vegetation, or the
-training set simply contained too little severe weather for a weather response to be learnable.
-Filling in the September&ndash;December 2024 runs &mdash; which do contain Helene and Milton &mdash;
-discriminates between them, and the answer is partly the second. The table above is the earlier
-version's turned over: county identity fell from 43&nbsp;% of split gain to 19&nbsp;% and the
-observed state at issue time rose from 5.7&nbsp;% to 22.5&nbsp;%, with weather up from
-22&nbsp;% to 28&nbsp;% overall. Given more storms to learn from, the model leans less on
-<em>which</em> county a row is and more on what that county is doing right now. The features
-carrying weather's weight are still the ones describing a sustained event (24-hour cumulative
-precipitation) rather than an instantaneous value.
+This table is the clearest single piece of evidence for what the old objective was doing.
+County identity was 43&nbsp;% of split gain before the autumn runs were densified and 19&nbsp;%
+after; it is now <strong>8.9&nbsp;%</strong>, while all weather together rises from 28&nbsp;%
+to <strong>42.3&nbsp;%</strong>. A model forced to reproduce the <em>level</em> spent most of
+its capacity learning which county a row belongs to, because county is what sets the level.
+Handed the level for free and asked only for the change, the same features under the same
+hyperparameters redistribute that capacity onto weather &mdash; the quantity the task is
+actually about. The weather features carrying the weight are the climatological exceedance
+thresholds (<code>gust_clim_p999</code>, <code>gust_clim_p95</code>): gusts read relative to
+what is normal for that county rather than in absolute terms.
 </p>
 
 <h3>7.1 Skill against lead time</h3>
@@ -829,29 +841,31 @@ it measures how a model fitted outside autumn behaves inside it.
     </tr>
     <tr>
       <td>model alone</td>
-      <td class="num">0.033516</td><td class="num">+1.1&nbsp;%</td>
-      <td class="num">0.010552</td><td class="num">+1.0&nbsp;%</td>
+      <td class="num">0.023705</td><td class="num">+30.1&nbsp;%</td>
+      <td class="num">0.010735</td><td class="num">&minus;0.7&nbsp;%</td>
     </tr>
     <tr>
       <td>blend, spring-fitted weights</td>
-      <td class="num">0.028255</td><td class="num">+16.7&nbsp;%</td>
-      <td class="num">0.010291</td><td class="num best">+3.5&nbsp;%</td>
+      <td class="num">0.026524</td><td class="num">+21.8&nbsp;%</td>
+      <td class="num">0.010285</td><td class="num best">+3.5&nbsp;%</td>
     </tr>
     <tr class="rowgroup">
       <td><strong>blend, autumn-fitted weights (submitted)</strong></td>
-      <td class="num best">0.023580</td><td class="num best">+30.4&nbsp;%</td>
-      <td class="num">0.010943</td><td class="num">&minus;2.6&nbsp;%</td>
+      <td class="num best">0.023188</td><td class="num best">+31.6&nbsp;%</td>
+      <td class="num">0.010555</td><td class="num">+1.0&nbsp;%</td>
     </tr>
   </tbody>
 </table>
 
 <p>
-Read the two skill columns against each other and the case for the submitted configuration is
-the whole of it. Every predictor changes rank between seasons. Persistence swings from the best
-non-trivial forecast available (+23.2&nbsp;%) to substantially worse than no forecast at all
-(&minus;12.2&nbsp;%), and the submitted configuration follows it down to &minus;2.6&nbsp;% out
-of season. The learned model is the steadiest thing in the table and also the smallest: between
-+1.0&nbsp;% and +1.1&nbsp;% wherever it is measured.
+The model alone now carries +30.1&nbsp;% of the +31.6&nbsp;% the submitted system reaches; under
+the previous head those figures were +1.1&nbsp;% and +30.4&nbsp;%, i.e. the blend supplied
+essentially all the skill. It is still worth its 1.5 points, but now improves a component that
+works rather than rescuing one that did not. Persistence still swings from +23.2&nbsp;% to
+&minus;12.2&nbsp;% between seasons, but the submitted configuration no longer follows it down,
+scoring +1.0&nbsp;% out of season where the old one gave up 2.6&nbsp;%. The spring-fitted
+weights are now the wrong choice in autumn (+21.8&nbsp;%, below the model alone), leaning on
+persistence where the model has become the better component.
 </p>
 
 <figure>
@@ -867,43 +881,32 @@ of season. The learned model is the steadiest thing in the table and also the sm
 <p>
 Figure 1 is the curve the guidelines say scoring will look at, in the season it will be scored
 in. Persistence decays from +69&nbsp;% at 0&ndash;6&nbsp;h to +3&nbsp;% past two days, which is
-the behaviour a persistence forecast should have. The model is nearly flat by comparison, and
-small: +4&nbsp;% at the shortest lead, fading to nothing at the longest. The blend is above both
-at every bucket, not between them: it keeps essentially all of persistence's short-lead
-advantage and still returns +15&nbsp;% at 48&ndash;72&nbsp;h, where persistence alone has decayed
-to +3&nbsp;%. That is the shape we want for a submission whose Task B lives entirely in the first
-bucket and whose Task A runs out to the fourth.
+the behaviour a persistence forecast should have. The model now tracks it at short lead
+(+70&nbsp;% in the first bucket) and separates from it as persistence decays, holding
++14&nbsp;% at 48&ndash;72&nbsp;h where persistence has fallen to +3&nbsp;%: it has learned the
+decay rather than inheriting it. Under the previous head this line was flat and small &mdash;
++4&nbsp;% at the shortest lead, fading to nothing at the longest &mdash; and the entire shape of
+this figure came from persistence. The blend stays above both at every bucket, not between
+them: +70&nbsp;/&nbsp;+61&nbsp;/&nbsp;+47&nbsp;/&nbsp;+29&nbsp;/&nbsp;+16&nbsp;%. That is the
+shape we want for a submission whose Task B lives entirely in the first bucket and whose Task A
+runs out to the fourth.
 </p>
 
 <h3>7.2 The hurdle alternative</h3>
 
 <p>
-The hurdle model is the guidelines' class-imbalance question posed as an experiment: instead
-of one Tweedie head, a binary classifier for <code>P(x &gt; &tau;)</code> multiplied by a severity
-head trained only on rows above <code>&tau;</code>. It splits the decision: with
-<code>&tau; = 0</code> it produces the best pooled MAE of anything we tried (0.001069, edging
-even always-zero) and with <code>&tau; = 0.001</code> the best event MAE (0.012933 against
-Tweedie's 0.013024) <em>and</em> the best RMSE on this split (0.010522 against 0.010552, a
-0.3&nbsp;% win), while reaching a maximum prediction of 0.091 against Tweedie's 0.056 &mdash;
-more of the dynamic range a severe-event forecast needs. On the reference split the hurdle is
-still the better model in every column, though by a quarter of the margin it had before the
-autumn runs were densified.
-</p>
-
-<p>
-We still submit Tweedie, and the reason is the one measurement that decides it. In the autumn
-window the <code>&tau; = 0.001</code> hurdle keeps its edge as a standalone model &mdash; 0.032971
-against Tweedie's 0.033516, while the <code>&tau; = 0</code> head now falls just behind at
-0.033566 &mdash; but the submission is not a standalone model, it is the blend. Refitting the
-weights for each head and comparing what would actually ship, the three land at 0.023580
-(Tweedie), 0.023592 (hurdle <code>&tau; = 0</code>) and 0.023589 (hurdle
-<code>&tau; = 0.001</code>): a spread of 0.05&nbsp;%, five parts in ten thousand. Persistence
-carries so much of the blended prediction that the choice of head stops mattering, and the
-honest conclusion is not that Tweedie won but that this decision is immaterial at the margin
-we can measure. Given that, we keep the single head over serving two models, and we would not
-defend the choice on accuracy grounds. (Its severity head regresses <code>log x</code> under
-squared loss: a gamma objective let leaf values reach 3.4&times;10<sup>4</sup> for a quantity
-bounded by 1, which log space prevents by construction.)
+The hurdle model is the guidelines' class-imbalance question posed as an experiment: instead of
+one head on the level, a binary classifier for <code>P(x &gt; &tau;)</code> times a severity
+head trained only on rows above <code>&tau;</code>. It was built to fix the Tweedie head's lack
+of dynamic range, and on the calm reference split it still leads on pooled metrics
+(<code>&tau; = 0</code> gives the best pooled MAE of anything tried, 0.001069). The autumn
+window decides against it, and now decides clearly: as standalone models the delta head scores
+0.023705 against the hurdle's 0.032971 and 0.033566, a 28&nbsp;% gap, where the Tweedie head it
+replaced was slightly <em>behind</em> both. Blended under weights refitted for each head they
+land at 0.023188, 0.023589 and 0.023592 &mdash; a spread of 1.74&nbsp;%, against 0.05&nbsp;%
+before, because persistence used to carry so much of the blend that the head could not matter.
+It now can, and the single residual model wins on the season being scored while remaining one
+model to serve rather than two.
 </p>
 
 
@@ -926,23 +929,24 @@ the model is trained on the 2.30&nbsp;million rows of it that precede 1 May 2025
 <p>
 The most obvious weakness in the earlier version of this submission was that its training window
 contained no Atlantic hurricane season while the evaluated window is mostly hurricane season.
-That is now closed: September to December 2024 is in at full 00/12Z cadence, which brings
-Helene and Milton with it, and the effect is visible in Section&nbsp;7 &mdash; weather takes
-28&nbsp;% of split gain and the model now leans on the observed outage state rather than on
-county identity. What the autumn data mainly bought, though, was not a better model. It was the
-ability to <em>measure</em> in the right season, and that measurement is what produced the
-blend-weight correction, worth 16.5&nbsp;% RMSE against the weights fitted out of season.
+That is now closed: September to December 2024 is in at full 00/12Z cadence, bringing Helene and
+Milton with it, and weather takes 42&nbsp;% of split gain against 28&nbsp;% before. What the
+autumn data mainly bought, though, was not a better model but the ability to <em>measure</em> in
+the right season &mdash; and that is what produced both corrections this submission rests on:
+the blend weights, worth 12.6&nbsp;% RMSE against weights fitted out of season, and the target
+reformulation, whose failure was invisible on the late-spring split where the model looked
+merely unremarkable rather than broken.
 </p>
 
 <p>
 Which leaves an honest statement of what the submitted predictor is. The effective persistence
-weight, after the fitted restoration decay, runs from 0.98 in the shortest bucket to 0.69 at one
-to two days out, which works out to 0.91 averaged over the submitted rows &mdash; Task&nbsp;B is
-two thirds of the file and sits entirely in the shortest bucket. So most of what we submit is the
-observed outage state carried forward, and a minority of it is the learned weather model. We would
-rather report that than imply the ratio is the other way round. The learned part is real &mdash;
-it is what keeps the blend above persistence at long lead, where persistence alone has decayed to
-almost nothing &mdash; but it is the smaller contribution.
+weight, after the fitted restoration decay, is 0.40 in the shortest bucket and 0.31 at one to two
+days out &mdash; <strong>0.40</strong> averaged over the submitted rows, against 0.91 under the
+previous head, where the accompanying admission was that most of what we submitted was simply
+the observed state carried forward. That is no longer true. What has not changed is that the
+state at issue time remains the most valuable input the system has: it is now the base the model
+corrects rather than a component blended in afterwards, which is a better use of it, not a
+smaller one.
 </p>
 
 <p>

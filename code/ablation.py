@@ -15,10 +15,13 @@ Three families of comparison, all on the held-out period:
 2. Non-learned baselines — always-zero, persistence, and per-county climatology. The
    first is not a strawman on this target: with 71.6% exact zeros it is genuinely hard
    to beat on MAE, and saying so with numbers is more useful than omitting it.
-3. Hurdle model — P(outage) x E[x | outage] as an alternative to the single Tweedie
-   head, addressing the "class-imbalance handling scheme" section directly. The Tweedie
-   model predicts a conditional mean and so never exceeds ~1.2% of customers out; the
-   hurdle formulation is the standard way to let a model commit to a severe event.
+3. Hurdle model — P(outage) x E[x | outage] as an alternative head, addressing the
+   "class-imbalance handling scheme" section directly. It was introduced when the
+   deployed head was a Tweedie regressor on the level, which predicted a conditional
+   mean, never exceeded ~1.2% of customers out, and so could not commit to a severe
+   event; the hurdle formulation is the standard fix for that. The deployed head is now
+   a residual-from-persistence model whose dynamic range is no longer the binding
+   constraint, so this comparison is kept as evidence rather than as a live candidate.
 
 Outputs a markdown table and a CSV under data/processed/, both meant to be pasted into
 the report rather than retyped.
@@ -35,6 +38,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from data_acquisition.eagle_i import PROCESSED_DIR
+from model_bundle import DELTA, to_level
 from train import LGBM_PARAMS, NON_FEATURE_COLS, VAL_START, load_table, temporal_split
 
 TABLE_PATH = PROCESSED_DIR / "training_table_partial.parquet"
@@ -117,18 +121,37 @@ def metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
     }
 
 
-def fit_predict(train_df, val_df, feature_cols, params=None) -> np.ndarray:
+def fit_predict(train_df, val_df, feature_cols, params=None,
+                with_persistence: bool = True) -> np.ndarray:
+    """Fit the deployed formulation — the residual from persistence — and return levels.
+
+    `with_persistence=False` is for the autoregressive ablation only. x_at_issue enters
+    the deployed system twice: as a feature, and as the base the predicted residual is
+    added to. Removing only the feature would leave the ablated model still carrying the
+    signal the row exists to measure the absence of, and would report the group as nearly
+    free. With no current state available anywhere there is no base to take a residual
+    from either, so that variant trains on the level instead — the same architecture the
+    model had before 27 Aug 2026, which is the honest counterfactual.
+    """
     model = lgb.LGBMRegressor(**(params or LGBM_PARAMS), verbose=-1)
-    model.fit(train_df[feature_cols], train_df["target_x"])
-    return np.clip(model.predict(val_df[feature_cols]), 0, 1)
+    if not with_persistence:
+        model.fit(train_df[feature_cols], train_df["target_x"])
+        return np.clip(model.predict(val_df[feature_cols]), 0, 1)
+    usable = train_df[train_df["x_at_issue"].notna()]
+    model.fit(usable[feature_cols], usable["target_x"] - usable["x_at_issue"])
+    return to_level(model.predict(val_df[feature_cols]),
+                    val_df["x_at_issue"].to_numpy(), DELTA)
 
 
 def hurdle_predict(train_df, val_df, feature_cols, threshold: float = 0.0) -> np.ndarray:
     """P(x > threshold) from a classifier, times exp(E[log x | x > threshold]).
 
-    Splitting the two questions is the point: the Tweedie head has to satisfy both with
-    one number and resolves the tension by staying small everywhere, which is why its
-    predictions never approach the severity the target actually reaches.
+    Splitting the two questions is the point: a single head on the level has to satisfy
+    both with one number and resolves the tension by staying small everywhere, which is
+    why the Tweedie version's predictions never approached the severity the target
+    actually reaches. Predicting the residual from persistence resolves the same tension
+    differently — the level comes from the observed state and the head only has to supply
+    the change — which is why it replaced Tweedie rather than this did.
 
     The severity head regresses log x under squared loss, not x under a gamma
     objective. The gamma version was tried first and produced predictions around
@@ -141,8 +164,7 @@ def hurdle_predict(train_df, val_df, feature_cols, threshold: float = 0.0) -> np
     that is the accepted cost of the formulation, not an oversight.
     """
     is_pos = train_df["target_x"] > threshold
-    head_params = {k: v for k, v in LGBM_PARAMS.items()
-                   if k not in ("objective", "tweedie_variance_power")}
+    head_params = {k: v for k, v in LGBM_PARAMS.items() if k != "objective"}
     clf = lgb.LGBMClassifier(**head_params, objective="binary", verbose=-1)
     clf.fit(train_df[feature_cols], is_pos.astype(int))
     p = clf.predict_proba(val_df[feature_cols])[:, 1]
@@ -201,12 +223,14 @@ def main() -> None:
     record("county climatology", "baseline", climatology_baseline(train_df, val_df))
 
     print("\nFull model and feature-group ablations:")
-    record("full model (Tweedie)", "model", fit_predict(train_df, val_df, feature_cols))
+    record("full model (delta)", "model", fit_predict(train_df, val_df, feature_cols))
     for group, cols in FEATURE_GROUPS.items():
         kept = [c for c in feature_cols if c not in cols]
         if not kept or len(kept) == len(feature_cols):
             continue
-        record(f"without {group}", "ablation", fit_predict(train_df, val_df, kept))
+        record(f"without {group}", "ablation",
+               fit_predict(train_df, val_df, kept,
+                           with_persistence=(group != "autoregressive")))
 
     print("\nAlternative head:")
     # Two thresholds, because the choice is not obvious and it matters: x > 0 counts a
@@ -217,7 +241,7 @@ def main() -> None:
            hurdle_predict(train_df, val_df, feature_cols, threshold=EVENT_THRESHOLD))
 
     res = pd.DataFrame(results)
-    full = res.loc[res.model == "full model (Tweedie)"].iloc[0]
+    full = res.loc[res.model == "full model (delta)"].iloc[0]
     res["dRMSE_vs_full_%"] = (100 * (res["RMSE"] - full["RMSE"]) / full["RMSE"]).round(2)
     res.to_csv(OUT_CSV, index=False)
 
@@ -235,7 +259,7 @@ def main() -> None:
     curve = lead_time_curve(
         val_df,
         {k: v for k, v in preds.items()
-         if k in ("full model (Tweedie)", "hurdle (P(event) x severity)",
+         if k in ("full model (delta)", "hurdle (P(event) x severity)",
                   "always zero", "persistence (x_at_issue)")},
     )
     curve.to_csv(LEAD_CURVE_CSV, index=False)

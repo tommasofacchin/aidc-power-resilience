@@ -629,3 +629,85 @@ ore tranquille.
   al test, e non è validabile — l'unico autunno disponibile è già in training.
 - **Passare all'hurdle**: misurato, dopo il blend i tre modelli stanno in 3 parti su
   10.000. Non vale il secondo modello da servire.
+
+---
+
+# 27 agosto — il modello predice il residuo, non il livello
+
+Scritto dopo aver visto la leaderboard: 4° posto con 67.19, primo a 73.7. La domanda
+«si può migliorare» ha trovato una risposta strutturale, non incrementale.
+
+## Cosa non andava, misurato
+
+Il LightGBM Tweedie sul livello **non aveva praticamente skill**. Sull'holdout autunnale
+fuori campione, contro la costante zero:
+
+| bucket | sempre zero | modello Tweedie | guadagno |
+|---|---|---|---|
+| (0, 6] | 0,034134 | 0,032824 | **3,8 %** |
+| (48, 72] | 0,033913 | 0,033754 | **0,5 %** |
+
+Due firme diagnostiche oltre al numero: l'RMSE del modello è **piatto rispetto al lead**
+(0,0328 a 6 h contro 0,0338 a 72 h), cioè aveva smesso di condizionare sul presente; e la
+sua predizione massima ovunque era **0,18** contro una verità che arriva a 1,0. Tutto lo
+skill del sistema veniva dal blend con la persistenza, non dal booster.
+
+La causa è l'obiettivo, non le feature. Tweedie ha un link logaritmico e su un target che
+è al 69,9 % esattamente zero la risposta stimata collassa verso una costante piccola. Gli
+alberi approssimano un'identità come `output = x_at_issue` solo a gradini moltiplicativi
+grossolani, quindi `x_at_issue` essendo la feature a più alto gain **non** significava che
+il modello sapesse riprodurla.
+
+## La correzione
+
+Il modello predice `target_x − x_at_issue` con obiettivo L2, e il livello consegnato è quel
+residuo risommato allo stato osservato all'issue time. Il target è centrato vicino a zero e
+quasi simmetrico, L2 è la perdita giusta, e la persistenza si ottiene esattamente quando il
+modello emette 0 — quindi lo skill della persistenza è un **pavimento** da cui il modello
+parte, invece di qualcosa che il blend deve rimettere dentro dopo.
+
+## Quanto vale, nell'unità in cui viene valutato
+
+Misurato sullo stesso holdout autunnale, convertito nel denominatore di grading, sulle 5
+contee consegnate, applicando la regola degli organizzatori che scarta i timestamp in cui
+la verità supera 1:
+
+| contea | Tweedie + blend | delta + blend | variazione |
+|---|---|---|---|
+| Arecibo | 0,113798 | 0,084006 | **−26,2 %** |
+| Mecklenburg | 0,097710 | 0,067678 | **−30,7 %** |
+| Boone | 0,008649 | 0,007120 | −17,7 % |
+| Orleans | 0,025162 | 0,022541 | −10,4 % |
+| Mackinac | 0,018274 | 0,017252 | −5,6 % |
+| **pooled** | **0,068473** | **0,049901** | **−27,1 %** |
+
+**Perché il guadagno è così sbilanciato:** l'amplificazione del denominatore. Arecibo
+(×4,66) e Mecklenburg (×20,89) valgono insieme il **95,5 %** del budget di errore
+quadratico, perché l'errore scala col quadrato del fattore di conversione. Le altre tre
+contee sono numericamente quasi irrilevanti per il punteggio. Ed è esattamente lì che il
+modello delta guadagna di più, essendo le contee con più attività di outage.
+
+Sul pool delle 102 contee di training il guadagno è solo **−1,66 %**: diluito dalle contee
+tranquille che non vengono valutate. È il numero da non citare — misura una popolazione che
+non è quella su cui si viene scoriati.
+
+## Cosa è stato provato e non serve
+
+- **Più capacità**: 1500 alberi/127 foglie fa −1,59 %, 3000/255 fa −1,47 %, contro il
+  −1,66 % di 500/63. Il vincolo era l'obiettivo, non la capacità. Parametri invariati.
+
+## Effetto sul blend
+
+I pesi della persistenza **crollano** da 1,00 / 1,00 / 0,95 / 0,90 / 0,55 a
+0,40 / 0,55 / 0,50 / 0,40 / 0,50. Nel bucket (0, 6], cioè tutto Task B, si passa da 1,00 a
+0,40: prima il modello non contribuiva **per niente** a due terzi delle righe consegnate,
+ora ne fa il 60 %. Il blend continua a pagare (−2,18 % sul modello da solo) ma ora migliora
+una componente che ha skill propria invece di riparare una che non ne aveva.
+
+## Nota di ingegneria
+
+`model_bundle` ora porta `target_kind`, e `predict.py` chiama `predict_level()` invece di
+`booster.predict()`. Senza quello un bundle delta letto da codice che si aspetta il livello
+carica benissimo e predice numeri piccoli e plausibili — esattamente la classe di skew
+silenzioso per cui quel modulo esiste. I bundle scritti prima del 27 agosto si leggono come
+`level`, mai il contrario: il default opposto sommerebbe la persistenza due volte.

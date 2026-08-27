@@ -1,6 +1,34 @@
 """
-Train the Task A/B risk model: LightGBM with a Tweedie objective (PLAN.md section 3.2),
-predicting target_x from weather + autoregressive + temporal + static county features.
+Train the Task A/B risk model: LightGBM predicting the RESIDUAL FROM PERSISTENCE,
+target_x - x_at_issue, from weather + autoregressive + temporal + static county features.
+
+Why the residual and not the level (changed 27 Aug 2026). The model used to predict
+target_x directly under a Tweedie objective, and measured against the always-zero
+baseline it had almost no skill: on the out-of-sample autumn holdout its RMSE was 0.03282
+in the 0-6h bucket against 0.03413 for predicting zero everywhere — 3.8% better than a
+constant — and its RMSE barely moved across lead time (0.03282 at 6h, 0.03375 at 72h),
+which is what a model that has stopped conditioning on the current state looks like. Its
+largest prediction anywhere was 0.18 against a truth reaching 1.0, so it could not signal
+a severe outage at all. The whole submission's skill was coming from the persistence
+blend, not from the booster.
+
+The cause is the objective, not the features. Tweedie carries a log link, and on a target
+that is 69.9% exact zeros the fitted response collapses toward a small constant; trees
+approximate an identity like "output = x_at_issue" only in coarse multiplicative steps,
+so x_at_issue being a high-gain feature did not mean the model could reproduce it.
+
+Predicting the residual removes the problem by construction: the target is centred near
+zero and roughly symmetric, L2 is the right loss for it, and persistence is recovered
+exactly when the model outputs 0 — so persistence's skill is a floor rather than
+something the blend has to add back. Measured on the same autumn holdout, in the
+grading denominator, over the five reporting counties: pooled RMSE 0.068473 -> 0.049901
+(-27.1%), with Arecibo -26.2% and Mecklenburg -30.7%. Extra capacity does not help
+(3000 trees/255 leaves is worse than 500/63), so the parameters below are unchanged
+apart from the objective.
+
+The blend is kept. It still pays, because the residual model and persistence disagree
+in ways that are worth averaging, but it now improves on a component that has its own
+skill instead of rescuing one that had none.
 
 Split is temporal, never random (PLAN.md section 3.7) — a random split would leak
 adjacent-in-time rows (the same storm, 15 minutes apart) across train/val and make
@@ -33,7 +61,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from data_acquisition.eagle_i import PROCESSED_DIR
-from model_bundle import save_bundle
+from model_bundle import DELTA, save_bundle, to_level
 
 VAL_START = pd.Timestamp("2025-05-01")  # see NOTE above — must stay inside the table's span
 BUNDLE_DIR = PROCESSED_DIR / "model_bundle"
@@ -41,10 +69,10 @@ BUNDLE_DIR = PROCESSED_DIR / "model_bundle"
 NON_FEATURE_COLS = {"issue_time", "target_time", "target_x"}
 CATEGORICAL_COLS = ["fips_code"]
 
-TWEEDIE_VARIANCE_POWER = 1.5
+# L2 on a residual that is centred near zero, not Tweedie on a 69.9%-zero level — see
+# the module docstring for the measurement that motivated the change.
 LGBM_PARAMS = dict(
-    objective="tweedie",
-    tweedie_variance_power=TWEEDIE_VARIANCE_POWER,
+    objective="regression",
     n_estimators=500,
     learning_rate=0.05,
     num_leaves=63,
@@ -53,6 +81,25 @@ LGBM_PARAMS = dict(
     colsample_bytree=0.8,
     random_state=42,
 )
+
+
+def fit_delta_model(train_df: pd.DataFrame, feature_cols: list[str]) -> lgb.LGBMRegressor:
+    """Fit the residual-from-persistence model.
+
+    Rows whose x_at_issue is NaN are dropped rather than imputed: the residual is
+    undefined without a base, and filling the base with zero would teach the model that
+    those rows had no outage at issue time when in truth EAGLE-I simply had no reading.
+    It is 0.12% of the table.
+
+    Shared with blend.py so the two cannot drift — a blend fitted against a differently
+    trained model is fitting the wrong thing, which is the failure this project already
+    hit once with the leaky split.
+    """
+    usable = train_df[train_df["x_at_issue"].notna()]
+    target = usable["target_x"] - usable["x_at_issue"]
+    model = lgb.LGBMRegressor(**LGBM_PARAMS, verbose=-1)
+    model.fit(usable[feature_cols], target, categorical_feature=CATEGORICAL_COLS)
+    return model
 
 
 def load_table(path: Path) -> pd.DataFrame:
@@ -99,9 +146,12 @@ def main():
         )
 
     feature_cols = [c for c in df.columns if c not in NON_FEATURE_COLS]
-    X_train, y_train = train_df[feature_cols], train_df["target_x"]
     X_val, y_val = val_df[feature_cols], val_df["target_x"]
 
+    # The training matrix and the residual target are both built inside fit_delta_model,
+    # which also drops the rows where persistence has no base. Everything reported below
+    # is in level units, reconstructed through to_level.
+    #
     # No early stopping, and no eval_set. The previous version passed `eval_X=`/`eval_y=`
     # — not parameters of LightGBM's sklearn fit(), which takes `eval_set`. They were
     # swallowed as unknown booster params instead of registering a validation set, and
@@ -115,13 +165,14 @@ def main():
     # validation set and then reporting metrics on that same set would make every number
     # in the report optimistic. With no early stopping the split stays a genuine holdout,
     # and n_estimators is simply a hyperparameter like any other.
-    model = lgb.LGBMRegressor(**LGBM_PARAMS, verbose=-1)
-    model.fit(X_train, y_train, categorical_feature=CATEGORICAL_COLS)
+    model = fit_delta_model(train_df, feature_cols)
 
-    pred_val = np.clip(model.predict(X_val), 0, 1)
+    # Reconstruct the level through the same function predict.py and blend.py use, so a
+    # change to the reconstruction cannot make this report disagree with the submission.
+    pred_val = to_level(model.predict(X_val), val_df["x_at_issue"].to_numpy(), DELTA)
 
     print("\n=== Validation metrics ===")
-    evaluate(y_val.values, pred_val, "LightGBM Tweedie")
+    evaluate(y_val.values, pred_val, "LightGBM delta-from-persistence")
 
     zero_baseline = np.zeros_like(y_val.values)
     evaluate(y_val.values, zero_baseline, "Baseline: always 0")
@@ -152,6 +203,7 @@ def main():
         booster=model.booster_,
         fips_categories=list(df["fips_code"].cat.categories),
         climatology=climatology,
+        target_kind=DELTA,
     )
     print(f"\nModel bundle saved to {BUNDLE_DIR} "
           f"({len(df['fips_code'].cat.categories)} fips categories, "

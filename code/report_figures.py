@@ -147,7 +147,7 @@ def reference_split(df: pd.DataFrame):
     bundle = load_bundle(BUNDLE_DIR)
     X = val_df[bundle.feature_names].copy()
     X["fips_code"] = bundle.encode_fips(X["fips_code"])
-    return val_df, np.clip(bundle.booster.predict(X), 0, 1)
+    return val_df, bundle.predict_level(X, val_df["x_at_issue"].to_numpy())
 
 
 def main(season: str = "reference") -> None:

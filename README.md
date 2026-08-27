@@ -111,6 +111,10 @@ python code/data_acquisition/bulk_download_training_weather.py --start 2024-09-0
 python code/features/build_training_table.py --years 2024 2025
 
 # 8. Train -> data/processed/model_bundle/
+#    The model predicts the RESIDUAL FROM PERSISTENCE (target_x - x_at_issue), not the
+#    level; the bundle records that in target_kind.json and predict.py reconstructs
+#    through model_bundle.to_level(). See train.py's docstring for the measurement that
+#    motivated it (the Tweedie head on the level beat always-zero by under 4%).
 python code/train.py
 
 # 9. Fit the lead-dependent persistence blend -> model_bundle/blend_weights.json
@@ -213,16 +217,30 @@ commit is a factor of two.
 cloned into an empty directory outside the working tree, a fresh virtualenv was built from
 `code/requirements.txt`, `data/raw` was supplied from the existing archive (steps 1, 2 and 6
 are downloads, and step 6 is quota-bound over days), and steps 3–12 were run in the order
-above. Every artefact came back **byte-identical** to the committed one:
+above. Every artefact came back **byte-identical** to the committed one.
+
+The model was reformulated on 27 August 2026 (step 8 above). That changes what steps 8–10
+produce and nothing else: the four artefacts from steps 3–7 still hash exactly as the clean-clone
+test certified them, which is what the first block below records. The three model artefacts are
+new, and the second block is what steps 8–10 produce on this machine — verified to be
+reproducible by re-running those steps against the same table and comparing, but **not** re-run
+from a fresh clone since the reformulation.
+
+Unchanged since the 24 August clean-clone test:
 
 | Artefact | MD5 |
 |---|---|
-| `submission/predictions.csv` | `024b246847c4bc640a2ef00b7aa98f67` |
 | `data/processed/total_customers_reconciled.csv` | `534f2888c9bb03dfd206ec90d30937bb` |
 | `data/processed/selected_counties.csv` | `c406c65cd6e685641ab2567c2317e1b8` |
 | `data/processed/training_table_partial.parquet` | `f3118a0926e282d18a4432e4ec9056fd` |
-| `data/processed/model_bundle/model.txt` | `48e1932f42006544c0aa4d3489109ec5` |
-| `data/processed/model_bundle/blend_weights.json` | `a833babc8fb52b45f3f50723142d144d` |
+
+Produced by the reformulated model, 27 August 2026:
+
+| Artefact | MD5 |
+|---|---|
+| `submission/predictions.csv` | `6ba64b0cccc32a10536ff6518394a576` |
+| `data/processed/model_bundle/model.txt` | `e763400088e8cd3341809f824195164c` |
+| `data/processed/model_bundle/blend_weights.json` | `3b91aaff07566a1486bff0fa5f4a6e36` |
 
 `data/processed/training_counties.csv` also matches (`c7aff04c903d502023e01dccdb346573`), but
 it is committed rather than derived (step 5 keeps the versioned sample on purpose, because the

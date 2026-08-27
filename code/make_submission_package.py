@@ -60,7 +60,11 @@ MODEL_BUNDLE = PROJECT_ROOT / "data" / "processed" / "model_bundle" / "model.txt
 #   against and cannot be regenerated now that the runs it predates have been added.
 # - The model_bundle/ directory contains the exact trained model and fitted preprocessing
 #   that produced predictions.csv. Per the submission guidelines, reviewers must not
-#   retrain; they use the supplied model as-is.
+#   retrain; they use the supplied model as-is. Every file the bundle writes must be
+#   listed — assert_bundle_complete() below enforces that, because omitting one is
+#   silent rather than loud: a bundle shipped without target_kind.json loads perfectly
+#   and reads as a LEVEL model, so predict.py would emit raw residuals as if they were
+#   ratios and a reviewer would reproduce numbers that are wrong without any error.
 PINNED_DATA = [
     Path("data") / "processed" / "training_counties.csv",
     Path("data") / "processed" / "baseline_runs_20260822.json",
@@ -68,6 +72,7 @@ PINNED_DATA = [
     Path("data") / "processed" / "model_bundle" / "fips_categories.json",
     Path("data") / "processed" / "model_bundle" / "blend_weights.json",
     Path("data") / "processed" / "model_bundle" / "climatology.parquet",
+    Path("data") / "processed" / "model_bundle" / "target_kind.json",
 ]
 
 # Working files that are not part of the deliverable. `data/` is git-ignored and holds
@@ -98,8 +103,27 @@ def pdf_page_count(path: Path) -> int:
     return len(re.findall(rb"/Type\s*/Page[^s]", path.read_bytes()))
 
 
+def assert_bundle_complete() -> list[str]:
+    """Every file in the model bundle must be in PINNED_DATA.
+
+    This exists because the first build after the bundle grew a file shipped without it.
+    Listing the bundle's contents by hand is exactly the step that goes stale when the
+    bundle changes, and the resulting package is broken in the quiet way: the missing
+    file is metadata, so the model still loads and still predicts.
+    """
+    bundle_dir = MODEL_BUNDLE.parent
+    if not bundle_dir.is_dir():
+        return []
+    pinned = {p.name for p in PINNED_DATA if p.parent.name == bundle_dir.name}
+    missing = sorted(p.name for p in bundle_dir.iterdir() if p.is_file() and p.name not in pinned)
+    if missing:
+        return [f"model bundle file(s) not listed in PINNED_DATA: {', '.join(missing)} — "
+                f"add them, or the package ships an incomplete bundle"]
+    return []
+
+
 def preflight() -> list[str]:
-    problems: list[str] = []
+    problems: list[str] = assert_bundle_complete()
 
     for path in (PREDICTIONS, SUBMITTED_PDF, SOURCE_PDF, README):
         if not path.exists():

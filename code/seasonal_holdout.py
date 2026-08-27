@@ -85,7 +85,7 @@ def evaluate_split(
     rows = []
 
     preds = {
-        "model (LightGBM Tweedie)": fit_predict(train_df, eval_df, feature_cols),
+        "model (LightGBM delta)": fit_predict(train_df, eval_df, feature_cols),
         "always zero": np.zeros(len(eval_df)),
         "county climatology": climatology_baseline(train_df, eval_df),
     }

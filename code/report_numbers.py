@@ -218,15 +218,15 @@ def main() -> None:
     section("The hurdle alternative in the autumn window (section 7.2)")
     autumn_train = df[df["issue_time"] >= AUTUMN_END]
     feature_cols = [c for c in df.columns if c not in NON_FEATURE_COLS]
-    heads = {"Tweedie": autumn_pred}
+    heads = {"delta": autumn_pred}
     for tau in (0.0, EVENT_THRESHOLD):
         heads[f"hurdle (tau={tau:g})"] = hurdle_predict(
             autumn_train, autumn_val, feature_cols, threshold=tau)
     blended_rmse = {}
     for label, pred in heads.items():
         # Each head gets its own weights: comparing them under weights fitted for the
-        # Tweedie head would score the other two on a blend nobody would ship.
-        own = shipped if label == "Tweedie" else fit_weights(autumn_val, pred, quiet=True)
+        # delta head would score the other two on a blend nobody would ship.
+        own = shipped if label == "delta" else fit_weights(autumn_val, pred, quiet=True)
         blended_rmse[label] = rmse(apply_blend(pred, pers_autumn, leads_autumn, own), truth_autumn)
         item(f"`{label}`: standalone autumn RMSE **{rmse(pred, truth_autumn):.6f}**, "
              f"blended under its own weights **{blended_rmse[label]:.6f}**")

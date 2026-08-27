@@ -392,7 +392,10 @@ def generate_predictions(schedule: pd.DataFrame, bundle: ModelBundle) -> pd.Data
                 # integer code, so re-deriving categories from these 5 counties alone would
                 # remap every county onto a different identity.
                 X["fips_code"] = bundle.encode_fips(X["fips_code"])
-                pred = np.clip(bundle.booster.predict(X), 0, 1)
+                # predict_level, not booster.predict: the booster outputs the residual
+                # from persistence, and the bundle carries which reconstruction that
+                # needs. See model_bundle.to_level and train.py's docstring.
+                pred = bundle.predict_level(X, rows["x_at_issue"].to_numpy())
 
                 # Blend toward persistence at short OPERATIONAL lead — the quarter's own
                 # lead here, not the `lead_hours` feature, which carries forecast age and

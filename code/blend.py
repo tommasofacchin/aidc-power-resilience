@@ -53,14 +53,13 @@ import json
 import sys
 from pathlib import Path
 
-import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from data_acquisition.eagle_i import PROCESSED_DIR
-from model_bundle import load_bundle
-from train import LGBM_PARAMS, NON_FEATURE_COLS, VAL_START, load_table, temporal_split
+from model_bundle import DELTA, load_bundle, to_level
+from train import NON_FEATURE_COLS, VAL_START, fit_delta_model, load_table, temporal_split
 
 BUNDLE_DIR = PROCESSED_DIR / "model_bundle"
 WEIGHTS_PATH = BUNDLE_DIR / "blend_weights.json"
@@ -200,9 +199,8 @@ def autumn_holdout(df: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray, str]:
             f"Rebuild it with `--years 2024 2025` first."
         )
     feature_cols = [c for c in df.columns if c not in NON_FEATURE_COLS]
-    model = lgb.LGBMRegressor(**LGBM_PARAMS, verbose=-1)
-    model.fit(train_df[feature_cols], train_df["target_x"], categorical_feature=["fips_code"])
-    pred = np.clip(model.predict(val_df[feature_cols]), 0, 1)
+    model = fit_delta_model(train_df, feature_cols)
+    pred = to_level(model.predict(val_df[feature_cols]), val_df["x_at_issue"].to_numpy(), DELTA)
     label = (f"{len(val_df):,} out-of-sample autumn rows "
              f"({AUTUMN_START.date()} .. {(AUTUMN_END - pd.Timedelta(days=1)).date()}, "
              f"model retrained on {len(train_df):,} rows of 2025)")
@@ -215,7 +213,7 @@ def reference_holdout(df: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray, str]:
     bundle = load_bundle(BUNDLE_DIR)
     X = val_df[bundle.feature_names].copy()
     X["fips_code"] = bundle.encode_fips(X["fips_code"])
-    pred = np.clip(bundle.booster.predict(X), 0, 1)
+    pred = bundle.predict_level(X, val_df["x_at_issue"].to_numpy())
     return val_df, pred, f"{len(val_df):,} held-out rows (split {VAL_START.date()})"
 
 

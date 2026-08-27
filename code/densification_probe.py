@@ -48,7 +48,8 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from blend import apply_blend, fit_weights
 from data_acquisition.eagle_i import PROCESSED_DIR
-from train import LGBM_PARAMS, NON_FEATURE_COLS, load_table
+from model_bundle import DELTA, to_level
+from train import NON_FEATURE_COLS, fit_delta_model, load_table
 
 TABLE_PATH = PROCESSED_DIR / "training_table_partial.parquet"
 BASELINE_RUNS_PATH = PROCESSED_DIR / "baseline_runs_20260822.json"
@@ -68,9 +69,8 @@ def metrics(truth: np.ndarray, pred: np.ndarray) -> dict[str, float]:
 
 
 def train_on(df: pd.DataFrame, feature_cols: list[str]) -> lgb.LGBMRegressor:
-    model = lgb.LGBMRegressor(**LGBM_PARAMS, verbose=-1)
-    model.fit(df[feature_cols], df["target_x"], categorical_feature=["fips_code"])
-    return model
+    """The deployed formulation, so the before/after measures the shipped architecture."""
+    return fit_delta_model(df, feature_cols)
 
 
 def main(baseline_path: Path = BASELINE_RUNS_PATH, eval_months: list[str] | None = None) -> None:
@@ -111,7 +111,8 @@ def main(baseline_path: Path = BASELINE_RUNS_PATH, eval_months: list[str] | None
         print(f"\n--- fold {month}: {len(eval_df):,} frozen rows scored")
         for label, train_df in [("A baseline", df[~in_month & from_baseline]),
                                 ("B densified", df[~in_month])]:
-            pred = np.clip(train_on(train_df, feature_cols).predict(eval_df[feature_cols]), 0, 1)
+            raw = train_on(train_df, feature_cols).predict(eval_df[feature_cols])
+            pred = to_level(raw, eval_df["x_at_issue"].to_numpy(), DELTA)
             blended = apply_blend(pred, persistence, leads, fit_weights(eval_df, pred, quiet=True))
             pooled[label].append(blended)
             m = metrics(truth, blended)
