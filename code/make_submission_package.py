@@ -65,15 +65,60 @@ MODEL_BUNDLE = PROJECT_ROOT / "data" / "processed" / "model_bundle" / "model.txt
 #   silent rather than loud: a bundle shipped without target_kind.json loads perfectly
 #   and reads as a LEVEL model, so predict.py would emit raw residuals as if they were
 #   ratios and a reviewer would reproduce numbers that are wrong without any error.
+# - selected_counties.csv, total_customers_reconciled.csv, MCC.csv and the Census
+#   gazetteer are read by predict.py itself (directly or through eagle_i.py and
+#   county_coordinates.py). They were missing until the organisers' 28-August
+#   clarification prompted an audit: predict.py cannot run from the package without
+#   them, and two of the four cannot be honestly regenerated at all. See
+#   INFERENCE_DATA_EXEMPT below for the rule that now decides this, rather than memory.
 PINNED_DATA = [
     Path("data") / "processed" / "training_counties.csv",
     Path("data") / "processed" / "baseline_runs_20260822.json",
+    Path("data") / "processed" / "selected_counties.csv",
+    Path("data") / "processed" / "total_customers_reconciled.csv",
+    Path("data") / "raw" / "MCC.csv",
+    Path("data") / "raw" / "2025_Gaz_counties_national.txt",
     Path("data") / "processed" / "model_bundle" / "model.txt",
     Path("data") / "processed" / "model_bundle" / "fips_categories.json",
     Path("data") / "processed" / "model_bundle" / "blend_weights.json",
     Path("data") / "processed" / "model_bundle" / "climatology.parquet",
     Path("data") / "processed" / "model_bundle" / "target_kind.json",
 ]
+
+# Every module predict.py pulls in, so the audit below reads the real inference path
+# rather than a remembered one.
+INFERENCE_MODULES = [
+    Path("predict.py"),
+    Path("model_bundle.py"),
+    Path("data_acquisition") / "eagle_i.py",
+    Path("data_acquisition") / "county_coordinates.py",
+    Path("data_acquisition") / "open_meteo.py",
+    Path("data_acquisition") / "bulk_download_training_weather.py",
+    Path("features") / "weather_features.py",
+    Path("features") / "autoregressive.py",
+]
+
+# Inference inputs deliberately NOT shipped, each with the reason it is safe to omit.
+# The organisers' rule is that a required input may be left out only when the submitted
+# code can reliably recreate it; anything else travels with the package. Keeping the
+# reasons here — not in a document — is what makes assert_inference_inputs_packaged()
+# able to tell "deliberately omitted" from "forgotten".
+INFERENCE_DATA_EXEMPT = {
+    "eaglei_outages_{year}.csv":
+        "1.4 GB/year of public EAGLE-I ground truth; downloaded by "
+        "`python code/data_acquisition/eagle_i.py` (figshare article 24237376 v4). "
+        "predict.py reads 2025 only, for the autoregressive state at issue time.",
+    "open_meteo_cache":
+        "262 MB HTTP cache of the archived ECMWF IFS HRES runs; recreated by "
+        "open_meteo.py against single-runs-api.open-meteo.com (models=ecmwf_ifs). "
+        "Rate-limited to ~110-130 calls/day, so a full refetch spans several days.",
+    "ifs_training_runs":
+        "39 MB of per-run forecast parquets, a training-time artefact of the weather "
+        "download; predict.py fetches the runs it needs through open_meteo.py.",
+    "training_table_partial.parquet":
+        "62 MB training matrix, rebuilt by features/build_training_table.py. "
+        "Training-only: predict.py never reads it.",
+}
 
 # Working files that are not part of the deliverable. `data/` is git-ignored and holds
 # gigabytes; it is not under code/ anyway, but the exclusions below are what keeps the
@@ -122,8 +167,49 @@ def assert_bundle_complete() -> list[str]:
     return []
 
 
+DATA_PATH_LITERAL = re.compile(
+    r'(?:RAW_DIR|PROCESSED_DIR|BUNDLE_DIR|PROJECT_ROOT)\s*/\s*'
+    r'(?:"[^"]+"|f"[^"]+")(?:\s*/\s*(?:"[^"]+"|f"[^"]+"))*'
+)
+
+
+def assert_inference_inputs_packaged() -> list[str]:
+    """Every data file the inference path reads must be pinned or explicitly exempt.
+
+    This is the check whose absence shipped a package that could not run. predict.py
+    reads selected_counties.csv, and through eagle_i.py and county_coordinates.py it
+    also reads total_customers_reconciled.csv, MCC.csv and the Census gazetteer. None
+    of the four were in PINNED_DATA, and nothing noticed, because the clean-clone
+    reproduction copied data/raw wholesale from a local archive instead of building it
+    from the package — so the missing files were always already there.
+
+    Rather than trust a second hand-written list to stay in step with the code, this
+    reads the path literals back out of the inference modules and requires each one to
+    be either shipped or listed in INFERENCE_DATA_EXEMPT with a reason.
+    """
+    pinned = {p.name for p in PINNED_DATA}
+    problems: list[str] = []
+    for module in INFERENCE_MODULES:
+        source = CODE_DIR / module
+        if not source.exists():
+            problems.append(f"inference module not found: {show(source)}")
+            continue
+        for literal in DATA_PATH_LITERAL.findall(source.read_text(encoding="utf8")):
+            leaf = re.findall(r'"([^"]+)"', literal)[-1]
+            if leaf in {"data", "raw", "processed", "submission", "code", "model_bundle"}:
+                continue  # a directory root, not an input
+            if leaf in pinned or leaf in INFERENCE_DATA_EXEMPT:
+                continue
+            problems.append(
+                f"{module.as_posix()} reads data/.../{leaf}, which is neither in "
+                f"PINNED_DATA nor declared in INFERENCE_DATA_EXEMPT — ship it, or "
+                f"record why the submitted code can recreate it"
+            )
+    return problems
+
+
 def preflight() -> list[str]:
-    problems: list[str] = assert_bundle_complete()
+    problems: list[str] = assert_bundle_complete() + assert_inference_inputs_packaged()
 
     for path in (PREDICTIONS, SUBMITTED_PDF, SOURCE_PDF, README):
         if not path.exists():

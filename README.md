@@ -43,8 +43,16 @@ export PYTHONUTF8=1              # PowerShell: $env:PYTHONUTF8 = "1"
 
 ## 2. Data acquisition
 
-No raw data is versioned here — every script below downloads what it needs and caches it
-under `data/` (git-ignored), so re-running a step is cheap and safe.
+No large raw data is versioned here — the EAGLE-I and Open-Meteo scripts below download
+what they need and cache it under `data/` (git-ignored), so re-running a step is cheap and
+safe. **One exception, and it is not automated:** `county_coordinates.py` only *reads* the
+Census gazetteer, it does not fetch it. The submission package therefore ships that file
+(see section 2.1); working from a bare clone instead, download it by hand:
+
+```bash
+curl -o data/raw/gaz_counties.zip   https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2025_Gazetteer/2025_Gaz_counties_national.zip
+unzip -o data/raw/gaz_counties.zip -d data/raw/    # -> 2025_Gaz_counties_national.txt
+```
 
 | Source | Purpose | Script |
 |---|---|---|
@@ -64,6 +72,50 @@ written to its own parquet, so the downloader is resumable: kill it and re-run i
 picks up exactly where it stopped. It also absorbs all three quota tiers by itself
 (minute and hour by sleeping, day by polling every 4 h), so it is safe to start once and
 leave running unattended.
+
+## 2.1 Reproducing `predictions.csv` from the submitted package
+
+**Inference entry point:** [code/predict.py](code/predict.py). **Exact command:**
+
+```bash
+python code/predict.py            # -> submission/predictions.csv
+```
+
+It takes no arguments: the issue-time schedule, the horizons and the five reporting
+counties are all fixed by the submitted inputs, so there is nothing to configure and
+nothing to get wrong. Do not retrain — `predict.py` loads the supplied model as-is.
+
+**Shipped in the package** (everything inference needs that the submitted code cannot
+honestly recreate):
+
+| File | Role at inference |
+|---|---|
+| `data/processed/model_bundle/model.txt` | The exact trained LightGBM booster behind the submitted `predictions.csv` |
+| `data/processed/model_bundle/fips_categories.json` | Fitted county encoder — category order is part of the model |
+| `data/processed/model_bundle/climatology.parquet` | Offline-derived per-county climatology feature table |
+| `data/processed/model_bundle/blend_weights.json` | Fitted persistence/model blend weights, per lead-time bucket |
+| `data/processed/model_bundle/target_kind.json` | Records that the target is a residual, not a level — `predict.py` reconstructs accordingly |
+| `data/processed/selected_counties.csv` | The five reporting counties. Pinned because `select_counties.py` re-derives a *decision* from data, and a reviewer re-running it could legitimately land on a different five |
+| `data/processed/total_customers_reconciled.csv` | The reconciled training denominator. Regenerating it needs the 1.4 GB 2024 EAGLE-I file for one 64 KB output |
+| `data/raw/MCC.csv` | The **grading** denominator, as published. Pinned so a future figshare version cannot silently change what the ratios are divided by |
+| `data/raw/2025_Gaz_counties_national.txt` | County centroids used as forecast coordinates. Pinned because no submitted script downloads it |
+| `data/processed/training_counties.csv` | The 102 counties the archived forecast set was downloaded for (training only, see section 6) |
+
+`make_submission_package.py` enforces this list against the code rather than against
+memory: it reads the data-path literals back out of the inference modules and refuses to
+build if one is neither shipped nor recorded as recreatable.
+
+**Not shipped, and how to obtain it** — the two large public datasets, with the exact
+retrieval parameters used:
+
+| Input | Retrieval |
+|---|---|
+| EAGLE-I outages, `eaglei_outages_2025.csv` (1.4 GB) | `python code/data_acquisition/eagle_i.py`. figshare article **24237376 v4**, file id **62164877**, anonymous HTTPS GET, no login. `predict.py` reads 2025 only, for the observed state at each issue time |
+| Archived ECMWF IFS HRES forecasts (262 MB cache) | `code/data_acquisition/open_meteo.py`. Endpoint **`https://single-runs-api.open-meteo.com/v1/forecast`**, **`models=ecmwf_ifs`** (IFS HRES, 9 km). Variables: `temperature_2m`, `dew_point_2m`, `surface_pressure`, `wind_speed_10m`, `wind_direction_10m`, `wind_gusts_10m`, `precipitation`, `rain`, `snowfall`, `cape`, `cloud_cover`, `freezing_level_height`. Runs: 00Z and 12Z initializations, archive from 2024-03-14. **Issue-time restriction:** both tasks use the **(D-1) 12:00Z** run for every issue time on day D — Task A at +12h..+60h from run time, Task B at +12h15m..+36h. That is a run genuinely disseminated before `issue_time` (IFS lag is ~5-7 h), never a later one and never observed weather. Task B could legitimately use a fresher run and deliberately does not: one run per day costs 93 API calls for the window against 367, and the daily rate limit is what decides whether the submission can be generated at all. See the `predict.py` docstring |
+
+`predict.py` fetches the forecast runs it needs on its own; with a cold cache expect the
+Open-Meteo rate limits described above, so allow several calendar days rather than one
+sitting.
 
 ## 3. Execution order
 
@@ -276,7 +328,7 @@ content does — the HTML it is printed from is versioned, and every number in i
 │   ├── validate_submission.py
 │   ├── make_submission_package.py # assembles dist/ in the guidelines' layout
 │   └── requirements.txt
-├── data/                   # git-ignored except two pinned inputs (see below)
+├── data/                   # git-ignored except the pinned inference inputs (section 2.1)
 ├── docs/                   # competition rules and reference material
 ├── report/                 # report source (HTML), figures, built PDF
 ├── submission/             # built deliverables: predictions.csv, report.pdf
